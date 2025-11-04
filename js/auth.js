@@ -1,17 +1,34 @@
 // 邮箱认证系统
 class AuthSystem {
     constructor() {
-        this.users = JSON.parse(localStorage.getItem('users')) || [];
-        this.currentUser = JSON.parse(localStorage.getItem('currentUser')) || null;
         this.init();
     }
 
     init() {
         // 绑定事件监听器
         this.bindEvents();
-        
-        // 检查用户登录状态
-        this.checkAuthStatus();
+        // Check current user status
+        this.checkCurrentUser();
+    }
+
+    checkCurrentUser() {
+        fetch('/api/current_user')
+            .then(response => response.json())
+            .then(user => {
+                if (user.id) {
+                    // User is logged in
+                    this.updateUIAfterLogin(user);
+                } else {
+                    // User is not logged in, make sure buttons are in correct state
+                    const uploadBtn = document.getElementById('uploadCatBtn');
+                    const adminBtn = document.getElementById('adminBtn');
+                    if (uploadBtn) uploadBtn.style.display = 'none';
+                    if (adminBtn) adminBtn.style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Error checking current user:', error);
+            });
     }
 
     bindEvents() {
@@ -123,29 +140,35 @@ class AuthSystem {
             return;
         }
         
-        // 检查邮箱是否已存在
-        if (this.users.some(user => user.email === email)) {
-            alert('该邮箱已被注册');
-            return;
-        }
-        
-        // 创建新用户
-        const newUser = {
-            id: Date.now(),
-            name: name,
-            email: email,
-            password: this.hashPassword(password), // 简单哈希处理
-            createdAt: new Date().toISOString()
-        };
-        
-        this.users.push(newUser);
-        localStorage.setItem('users', JSON.stringify(this.users));
-        
-        alert('注册成功！');
-        this.closeModal('register');
-        
-        // 自动登录
-        this.login(email, password);
+        // 调用API注册用户
+        fetch('/api/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name: name,
+                email: email,
+                password: password,
+                confirmPassword: confirmPassword
+            })
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.json();
+            } else {
+                return response.json().then(err => Promise.reject(err));
+            }
+        })
+        .then(data => {
+            alert('注册成功！');
+            this.closeModal('register');
+            // 自动登录
+            this.login(email, password);
+        })
+        .catch(error => {
+            alert(error.error || '注册失败');
+        });
     }
 
     // 用户登录
@@ -170,85 +193,98 @@ class AuthSystem {
 
     // 执行登录逻辑
     login(email, password) {
-        const user = this.users.find(u => u.email === email);
-        
-        if (!user) {
-            alert('用户不存在');
-            return;
-        }
-        
-        if (user.password !== this.hashPassword(password)) {
-            alert('密码错误');
-            return;
-        }
-        
-        // 登录成功
-        this.currentUser = {
-            id: user.id,
-            name: user.name,
-            email: user.email
-        };
-        
-        localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-        this.closeModal('login');
-        this.updateUIAfterLogin();
-        alert(`欢迎回来，${user.name}！`);
+        fetch('/api/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                email: email,
+                password: password
+            })
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.json();
+            } else {
+                return response.json().then(err => Promise.reject(err));
+            }
+        })
+        .then(user => {
+            // 登录成功，更新UI
+            this.closeModal('login');
+            // Update the UI to show the user is logged in
+            this.updateUIAfterLogin(user);
+        })
+        .catch(error => {
+            alert(error.error || '登录失败');
+        });
     }
 
-    // 简单密码哈希（实际项目中应使用更安全的方法）
-    hashPassword(password) {
-        // 这里只是一个简单的示例，实际应用中应该使用 bcrypt 等安全的哈希算法
-        let hash = 0;
-        for (let i = 0; i < password.length; i++) {
-            const char = password.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // 转换为32位整数
+    // 更新UI显示登录状态
+    updateUIAfterLogin(user) {
+        // Hide login/register buttons
+        const loginBtn = document.getElementById('loginBtn');
+        const registerBtn = document.getElementById('registerBtn');
+        const joinUsBtn = document.getElementById('joinUsBtn');
+        
+        if (loginBtn) loginBtn.style.display = 'none';
+        if (registerBtn) registerBtn.style.display = 'none';
+        if (joinUsBtn) joinUsBtn.style.display = 'none';
+        
+        // Show upload button
+        const uploadBtn = document.getElementById('uploadCatBtn');
+        if (uploadBtn) uploadBtn.style.display = 'inline-block';
+        
+        // If admin, show admin button
+        if (user.is_admin) {
+            const adminBtn = document.getElementById('adminBtn');
+            if (adminBtn) adminBtn.style.display = 'inline-block';
         }
-        return hash.toString();
+        
+        // Show user info and logout button
+        const headerContainer = document.querySelector('header .container');
+        // Remove existing user info if present
+        const existingUserInfo = document.querySelector('.user-info');
+        if (existingUserInfo) {
+            existingUserInfo.remove();
+        }
+        
+        const userInfo = document.createElement('div');
+        userInfo.className = 'user-info';
+        userInfo.innerHTML = `
+            <span>欢迎, ${user.name}</span>
+            <button id="logoutBtn">退出</button>
+        `;
+        headerContainer.appendChild(userInfo);
+        
+        // Add logout event
+        document.getElementById('logoutBtn').addEventListener('click', () => this.logout());
     }
 
-    // 检查用户登录状态
-    checkAuthStatus() {
-        if (this.currentUser) {
-            this.updateUIAfterLogin();
-        }
-    }
-
-    // 登出
+    // 用户退出
     logout() {
-        this.currentUser = null;
-        localStorage.removeItem('currentUser');
-        this.updateUIAfterLogout();
-    }
-
-    // 登录后更新UI
-    updateUIAfterLogin() {
-        const authButtons = document.querySelector('.auth-buttons');
-        if (authButtons) {
-            authButtons.innerHTML = `
-                <span>欢迎，${this.currentUser.name}</span>
-                <button id="logoutBtn">退出</button>
-            `;
+        fetch('/api/logout', {
+            method: 'POST'
+        })
+        .then(() => {
+            // Reset UI to show login/register buttons
+            const loginBtn = document.getElementById('loginBtn');
+            const registerBtn = document.getElementById('registerBtn');
             
-            document.getElementById('logoutBtn').addEventListener('click', () => {
-                this.logout();
-            });
-        }
-    }
-
-    // 登出后更新UI
-    updateUIAfterLogout() {
-        const authButtons = document.querySelector('.auth-buttons');
-        if (authButtons) {
-            authButtons.innerHTML = `
-                <button id="loginBtn">登录</button>
-                <button id="registerBtn">注册</button>
-            `;
+            if (loginBtn) loginBtn.style.display = 'inline-block';
+            if (registerBtn) registerBtn.style.display = 'inline-block';
             
-            // 重新绑定事件
-            document.getElementById('loginBtn').addEventListener('click', () => this.openModal('login'));
-            document.getElementById('registerBtn').addEventListener('click', () => this.openModal('register'));
-        }
+            // Hide upload and admin buttons
+            const uploadBtn = document.getElementById('uploadCatBtn');
+            const adminBtn = document.getElementById('adminBtn');
+            if (uploadBtn) uploadBtn.style.display = 'none';
+            if (adminBtn) adminBtn.style.display = 'none';
+            
+            // Remove user info
+            const userInfo = document.querySelector('.user-info');
+            if (userInfo) userInfo.remove();
+        });
     }
 }
 

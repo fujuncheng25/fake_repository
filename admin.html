@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理控制台 - 流浪猫公益项目</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .admin-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .admin-header {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .admin-section {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            overflow: hidden;
+        }
+        
+        .admin-section h2 {
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px 20px;
+            margin: 0;
+        }
+        
+        .admin-content {
+            padding: 20px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #4CAF50;
+            margin: 10px 0;
+        }
+        
+        .stat-label {
+            color: #666;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+        }
+        
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+        
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        
+        .status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-approved {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .status-rejected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        
+        .btn-primary {
+            background-color: #4CAF50;
+            color: white;
+        }
+        
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+        
+        .logout-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>流浪猫公益项目 - 管理控制台</h1>
+            <nav>
+                <ul>
+                    <li><a href="/">返回首页</a></li>
+                </ul>
+            </nav>
+            <div class="auth-buttons">
+                <button id="logoutBtn" class="logout-btn">退出登录</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="admin-container">
+            <div class="admin-header">
+                <div>
+                    <h2>管理控制台</h2>
+                    <p>欢迎，管理员</p>
+                </div>
+                <div>
+                    <button id="refreshBtn" class="btn btn-primary">刷新数据</button>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number" id="catsCount">0</div>
+                    <div class="stat-label">猫咪总数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="usersCount">0</div>
+                    <div class="stat-label">注册用户</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="requestsCount">0</div>
+                    <div class="stat-label">领养申请</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="pendingRequestsCount">0</div>
+                    <div class="stat-label">待处理申请</div>
+                </div>
+            </div>
+
+            <div class="admin-section">
+                <h2>猫咪信息管理</h2>
+                <div class="admin-content">
+                    <table id="catsTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>名字</th>
+                                <th>年龄</th>
+                                <th>性别</th>
+                                <th>描述</th>
+                                <th>上传者</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="admin-section">
+                <h2>用户管理</h2>
+                <div class="admin-content">
+                    <table id="usersTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>姓名</th>
+                                <th>邮箱</th>
+                                <th>角色</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="admin-section">
+                <h2>领养申请管理</h2>
+                <div class="admin-content">
+                    <table id="requestsTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>猫咪</th>
+                                <th>申请人</th>
+                                <th>邮箱</th>
+                                <th>状态</th>
+                                <th>申请时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 流浪猫公益项目. 保留所有权利.</p>
+        </div>
+    </footer>
+
+    <script>
+        // Check if user is admin
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAdminAccess();
+            loadDashboardData();
+            
+            // Bind events
+            document.getElementById('logoutBtn').addEventListener('click', logout);
+            document.getElementById('refreshBtn').addEventListener('click', loadDashboardData);
+        });
+
+        function checkAdminAccess() {
+            fetch('/api/current_user')
+                .then(response => response.json())
+                .then(user => {
+                    if (!user.is_admin) {
+                        alert('需要管理员权限访问此页面');
+                        window.location.href = '/';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    window.location.href = '/';
+                });
+        }
+
+        function loadDashboardData() {
+            loadCats();
+            loadUsers();
+            loadAdoptionRequests();
+        }
+
+        function loadCats() {
+            fetch('/api/cats')
+                .then(response => response.json())
+                .then(cats => {
+                    document.getElementById('catsCount').textContent = cats.length;
+                    const tbody = document.querySelector('#catsTable tbody');
+                    tbody.innerHTML = '';
+                    
+                    cats.forEach(cat => {
+                        const row = tbody.insertRow();
+                        row.innerHTML = `
+                            <td>${cat.id}</td>
+                            <td>${cat.name}</td>
+                            <td>${cat.age}</td>
+                            <td>${cat.gender}</td>
+                            <td>${cat.description || ''}</td>
+                            <td>User ${cat.owner_id}</td>
+                            <td>${new Date(cat.created_at).toLocaleDateString()}</td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button class="btn btn-primary">编辑</button>
+                                    <button class="btn btn-danger">删除</button>
+                                </div>
+                            </td>
+                        `;
+                    });
+                })
+                .catch(error => console.error('Error loading cats:', error));
+        }
+
+        function loadUsers() {
+            fetch('/api/users')
+                .then(response => response.json())
+                .then(users => {
+                    document.getElementById('usersCount').textContent = users.length;
+                    const tbody = document.querySelector('#usersTable tbody');
+                    tbody.innerHTML = '';
+                    
+                    users.forEach(user => {
+                        const row = tbody.insertRow();
+                        row.innerHTML = `
+                            <td>${user.id}</td>
+                            <td>${user.name}</td>
+                            <td>${user.email}</td>
+                            <td>${user.is_admin ? '管理员' : '普通用户'}</td>
+                            <td>${new Date(user.created_at).toLocaleDateString()}</td>
+                            <td>
+                                <div class="action-buttons">
+                                    ${user.is_admin ? '' : '<button class="btn btn-secondary">设为管理员</button>'}
+                                    <button class="btn btn-danger">删除</button>
+                                </div>
+                            </td>
+                        `;
+                    });
+                })
+                .catch(error => console.error('Error loading users:', error));
+        }
+
+        function loadAdoptionRequests() {
+            fetch('/api/adoption_requests')
+                .then(response => response.json())
+                .then(requests => {
+                    document.getElementById('requestsCount').textContent = requests.length;
+                    const pendingCount = requests.filter(r => r.status === 'pending').length;
+                    document.getElementById('pendingRequestsCount').textContent = pendingCount;
+                    
+                    const tbody = document.querySelector('#requestsTable tbody');
+                    tbody.innerHTML = '';
+                    
+                    requests.forEach(request => {
+                        const row = tbody.insertRow();
+                        row.innerHTML = `
+                            <td>${request.id}</td>
+                            <td>${request.cat_name}</td>
+                            <td>${request.user_name}</td>
+                            <td>${request.user_email}</td>
+                            <td>
+                                <span class="status-badge status-${request.status}">
+                                    ${request.status === 'pending' ? '待处理' : 
+                                      request.status === 'approved' ? '已批准' : '已拒绝'}
+                                </span>
+                            </td>
+                            <td>${new Date(request.created_at).toLocaleDateString()}</td>
+                            <td>
+                                <div class="action-buttons">
+                                    ${request.status === 'pending' ? `
+                                        <button class="btn btn-primary" onclick="updateRequestStatus(${request.id}, 'approved')">批准</button>
+                                        <button class="btn btn-danger" onclick="updateRequestStatus(${request.id}, 'rejected')">拒绝</button>
+                                    ` : ''}
+                                </div>
+                            </td>
+                        `;
+                    });
+                })
+                .catch(error => console.error('Error loading adoption requests:', error));
+        }
+
+        function updateRequestStatus(requestId, status) {
+            // In a real implementation, this would make an API call to update the request status
+            alert(`将申请 #${requestId} 状态更新为: ${status}`);
+            // For now, just reload the data
+            loadAdoptionRequests();
+        }
+
+        function logout() {
+            fetch('/api/logout', {
+                method: 'POST'
+            })
+            .then(() => {
+                window.location.href = '/';
+            })
+            .catch(error => console.error('Error:', error));
+        }
+    </script>
+</body>
+</html>

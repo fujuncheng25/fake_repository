@@ -19,6 +19,8 @@
                 </ul>
             </nav>
             <div class="auth-buttons">
+                <button id="uploadCatBtn" style="display: none;">上传猫咪</button>
+                <button id="adminBtn" style="display: none;">管理控制台</button>
                 <button id="loginBtn">登录</button>
                 <button id="registerBtn">注册</button>
             </div>
@@ -59,11 +61,11 @@
             <form id="loginForm">
                 <div class="form-group">
                     <label for="loginEmail">邮箱地址:</label>
-                    <input type="email" id="loginEmail" required>
+                    <input type="email" id="loginEmail" value="test@example.com" required>
                 </div>
                 <div class="form-group">
                     <label for="loginPassword">密码:</label>
-                    <input type="password" id="loginPassword" required>
+                    <input type="password" id="loginPassword" value="admin123" required>
                 </div>
                 <button type="submit">登录</button>
             </form>
