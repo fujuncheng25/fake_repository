@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>内容管理 - 流浪猫公益项目</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .content-management-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .content-header {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .content-list {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+            margin-bottom: 30px;
+        }
+        
+        .content-item {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .content-item:hover {
+            background-color: #f9f9f9;
+        }
+        
+        .content-item:last-child {
+            border-bottom: none;
+        }
+        
+        .content-item h3 {
+            margin-bottom: 10px;
+            color: #4CAF50;
+        }
+        
+        .content-item p {
+            color: #666;
+            margin-bottom: 10px;
+        }
+        
+        .content-item .updated {
+            font-size: 0.8rem;
+            color: #999;
+        }
+        
+        .content-editor {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 30px;
+            display: none;
+        }
+        
+        .editor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        
+        .form-group textarea {
+            min-height: 200px;
+            resize: vertical;
+        }
+        
+        .editor-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .btn-primary {
+            background-color: #4CAF50;
+            color: white;
+        }
+        
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #45a049;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #5a6268;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #4CAF50;
+            text-decoration: none;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        
+        .no-content {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>流浪猫公益项目 - 内容管理</h1>
+            <nav>
+                <ul>
+                    <li><a href="/admin">返回管理控制台</a></li>
+                    <li><a href="/">返回首页</a></li>
+                </ul>
+            </nav>
+            <div class="auth-buttons">
+                <button id="logoutBtn" class="logout-btn">退出登录</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="content-management-container">
+            <a href="/admin" class="back-link">← 返回管理控制台</a>
+            
+            <div class="content-header">
+                <div>
+                    <h2>内容管理</h2>
+                    <p>管理网站各个页面的文本内容</p>
+                </div>
+            </div>
+
+            <div class="content-list" id="contentList">
+                <div class="no-content">加载中...</div>
+            </div>
+
+            <div class="content-editor" id="contentEditor">
+                <div class="editor-header">
+                    <h3 id="editorTitle">编辑内容</h3>
+                </div>
+                <form id="contentForm">
+                    <input type="hidden" id="contentId">
+                    <div class="form-group">
+                        <label for="contentTitle">标题:</label>
+                        <input type="text" id="contentTitle" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="contentText">内容:</label>
+                        <textarea id="contentText" required></textarea>
+                    </div>
+                    <div class="editor-actions">
+                        <button type="submit" class="btn btn-primary">保存更改</button>
+                        <button type="button" class="btn btn-secondary" id="cancelEdit">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 流浪猫公益项目. 保留所有权利.</p>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if user is logged in and is admin
+            checkAdminAuthentication();
+            
+            // Load content list
+            loadContentList();
+            
+            // Bind events
+            document.getElementById('logoutBtn').addEventListener('click', logout);
+            document.getElementById('contentForm').addEventListener('submit', saveContent);
+            document.getElementById('cancelEdit').addEventListener('click', hideEditor);
+        });
+
+        function checkAdminAuthentication() {
+            fetch('/api/current_user')
+                .then(response => response.json())
+                .then(user => {
+                    if (!user.id || !user.is_admin) {
+                        alert('请以管理员身份登录后再访问此页面');
+                        window.location.href = '/';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    window.location.href = '/';
+                });
+        }
+
+        function loadContentList() {
+            fetch('/api/content')
+                .then(response => response.json())
+                .then(contents => {
+                    const container = document.getElementById('contentList');
+                    
+                    if (contents.length === 0) {
+                        container.innerHTML = '<div class="no-content">暂无内容</div>';
+                        return;
+                    }
+                    
+                    container.innerHTML = '';
+                    
+                    contents.forEach(content => {
+                        const contentElement = document.createElement('div');
+                        contentElement.className = 'content-item';
+                        contentElement.innerHTML = `
+                            <h3>${content.title}</h3>
+                            <p>${content.content.substring(0, 150)}${content.content.length > 150 ? '...' : ''}</p>
+                            <div class="updated">更新时间: ${new Date(content.updated_at).toLocaleString()}</div>
+                        `;
+                        
+                        contentElement.addEventListener('click', () => {
+                            editContent(content);
+                        });
+                        
+                        container.appendChild(contentElement);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error loading content:', error);
+                    document.getElementById('contentList').innerHTML = '<div class="no-content">加载内容失败</div>';
+                });
+        }
+
+        function editContent(content) {
+            document.getElementById('contentId').value = content.id;
+            document.getElementById('contentTitle').value = content.title;
+            document.getElementById('contentText').value = content.content;
+            
+            document.getElementById('contentList').style.display = 'none';
+            document.getElementById('contentEditor').style.display = 'block';
+        }
+
+        function hideEditor() {
+            document.getElementById('contentList').style.display = 'block';
+            document.getElementById('contentEditor').style.display = 'none';
+        }
+
+        function saveContent(e) {
+            e.preventDefault();
+            
+            const contentId = document.getElementById('contentId').value;
+            const title = document.getElementById('contentTitle').value;
+            const content = document.getElementById('contentText').value;
+            
+            if (!contentId || !title || !content) {
+                alert('请填写所有必填字段');
+                return;
+            }
+            
+            fetch(`/api/content/${contentId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    title: title,
+                    content: content
+                })
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else {
+                    return response.json().then(err => Promise.reject(err));
+                }
+            })
+            .then(data => {
+                alert('内容保存成功！');
+                hideEditor();
+                loadContentList();
+            })
+            .catch(error => {
+                alert(error.error || '保存内容失败，请重试');
+            });
+        }
+
+        function logout() {
+            fetch('/api/logout', {
+                method: 'POST'
+            })
+            .then(() => {
+                window.location.href = '/';
+            })
+            .catch(error => console.error('Error:', error));
+        }
+    </script>
+</body>
+</html>

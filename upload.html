@@ -103,6 +103,8 @@
                 <ul>
                     <li><a href="/">首页</a></li>
                     <li><a href="/#cats">猫咪信息</a></li>
+                    <li><a href="/about">关于我们</a></li>
+                    <li><a href="/contact">联系我们</a></li>
                 </ul>
             </nav>
             <div class="auth-buttons">
@@ -154,12 +156,10 @@
                         <textarea id="catDescription" name="description" placeholder="请描述这只猫咪的性格、健康状况等信息..." required></textarea>
                     </div>
                     
-                    <!-- Image upload would go here in a more advanced implementation -->
-                    <!-- For now, we'll just note that images will be added later -->
                     <div class="form-group">
                         <label for="catImage">猫咪图片</label>
-                        <input type="file" id="catImage" name="image" accept="image/*" disabled>
-                        <small>图片上传功能将在后续版本中实现</small>
+                        <input type="file" id="catImage" name="image" accept="image/*">
+                        <small>请选择猫咪的图片文件</small>
                     </div>
                     
                     <button type="submit" class="upload-btn">提交猫咪信息</button>
@@ -216,13 +216,23 @@
                 return;
             }
             
+            // Create a new FormData object for multipart upload
+            const uploadData = new FormData();
+            uploadData.append('name', catData.name);
+            uploadData.append('age', catData.age);
+            uploadData.append('gender', catData.gender);
+            uploadData.append('description', catData.description);
+            
+            // Add image file if selected
+            const imageFile = document.getElementById('catImage').files[0];
+            if (imageFile) {
+                uploadData.append('image', imageFile);
+            }
+            
             // Submit to API
             fetch('/api/cats', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(catData)
+                body: uploadData
             })
             .then(response => {
                 if (response.ok) {

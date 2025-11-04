@@ -155,6 +155,8 @@
             <nav>
                 <ul>
                     <li><a href="/">返回首页</a></li>
+                    <li><a href="/about">关于我们</a></li>
+                    <li><a href="/contact">联系我们</a></li>
                 </ul>
             </nav>
             <div class="auth-buttons">
@@ -206,6 +208,7 @@
                                 <th>性别</th>
                                 <th>描述</th>
                                 <th>上传者</th>
+                                <th>状态</th>
                                 <th>创建时间</th>
                                 <th>操作</th>
                             </tr>
@@ -259,6 +262,12 @@
                     </table>
                 </div>
             </div>
+
+            <div class="admin-section">
+                <h2>内容管理</h2>
+                <p>管理网站各个页面的文本内容。</p>
+                <button onclick="window.location.href='/content-management'" class="admin-btn">管理网站内容</button>
+            </div>
         </div>
     </main>
 
@@ -301,7 +310,7 @@
         }
 
         function loadCats() {
-            fetch('/api/cats')
+            fetch('/api/admin/cats')
                 .then(response => response.json())
                 .then(cats => {
                     document.getElementById('catsCount').textContent = cats.length;
@@ -310,6 +319,9 @@
                     
                     cats.forEach(cat => {
                         const row = tbody.insertRow();
+                        const status = cat.is_approved ? '已批准' : '待审核';
+                        const statusClass = cat.is_approved ? 'status-approved' : 'status-pending';
+                        
                         row.innerHTML = `
                             <td>${cat.id}</td>
                             <td>${cat.name}</td>
@@ -317,11 +329,14 @@
                             <td>${cat.gender}</td>
                             <td>${cat.description || ''}</td>
                             <td>User ${cat.owner_id}</td>
+                            <td><span class="status-badge ${statusClass}">${status}</span></td>
                             <td>${new Date(cat.created_at).toLocaleDateString()}</td>
                             <td>
                                 <div class="action-buttons">
-                                    <button class="btn btn-primary">编辑</button>
-                                    <button class="btn btn-danger">删除</button>
+                                    ${cat.is_approved ? 
+                                        `<button class="btn btn-secondary" onclick="rejectCat(${cat.id})">撤销</button>` : 
+                                        `<button class="btn btn-primary" onclick="approveCat(${cat.id})">批准</button>
+                                         <button class="btn btn-danger" onclick="rejectCat(${cat.id})">拒绝</button>`}
                                 </div>
                             </td>
                         `;
@@ -402,6 +417,46 @@
             alert(`将申请 #${requestId} 状态更新为: ${status}`);
             // For now, just reload the data
             loadAdoptionRequests();
+        }
+
+        function approveCat(catId) {
+            if (confirm(`确定要批准这只猫咪 (ID: ${catId}) 吗？`)) {
+                fetch(`/api/cats/${catId}/approve`, {
+                    method: 'POST'
+                })
+                .then(response => {
+                    if (response.ok) {
+                        alert('猫咪已批准！');
+                        loadCats();
+                    } else {
+                        alert('批准失败，请重试');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('批准失败，请重试');
+                });
+            }
+        }
+
+        function rejectCat(catId) {
+            if (confirm(`确定要拒绝这只猫咪 (ID: ${catId}) 吗？`)) {
+                fetch(`/api/cats/${catId}/reject`, {
+                    method: 'POST'
+                })
+                .then(response => {
+                    if (response.ok) {
+                        alert('猫咪已拒绝！');
+                        loadCats();
+                    } else {
+                        alert('拒绝失败，请重试');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('拒绝失败，请重试');
+                });
+            }
         }
 
         function logout() {
