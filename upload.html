@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>上传猫咪信息 - 流浪猫公益项目</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .upload-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .upload-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .upload-form {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        .upload-btn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+        
+        .upload-btn:hover {
+            background-color: #45a049;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #4CAF50;
+            text-decoration: none;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        
+        .success-message {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .error-message {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>流浪猫公益项目</h1>
+            <nav>
+                <ul>
+                    <li><a href="/">首页</a></li>
+                    <li><a href="/#cats">猫咪信息</a></li>
+                </ul>
+            </nav>
+            <div class="auth-buttons">
+                <button id="logoutBtn">退出</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="upload-container">
+            <a href="/" class="back-link">← 返回首页</a>
+            
+            <div class="upload-header">
+                <h2>上传猫咪信息</h2>
+                <p>帮助更多流浪猫找到温暖的家</p>
+            </div>
+            
+            <div class="success-message" id="successMessage">
+                猫咪信息上传成功！感谢您的爱心贡献。
+            </div>
+            
+            <div class="error-message" id="errorMessage">
+                <!-- Error messages will appear here -->
+            </div>
+            
+            <div class="upload-form">
+                <form id="catUploadForm">
+                    <div class="form-group">
+                        <label for="catName">猫咪名字 *</label>
+                        <input type="text" id="catName" name="name" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="catAge">年龄 *</label>
+                        <input type="text" id="catAge" name="age" placeholder="例如：2岁 或 6个月" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="catGender">性别 *</label>
+                        <select id="catGender" name="gender" required>
+                            <option value="">请选择性别</option>
+                            <option value="雄性">雄性</option>
+                            <option value="雌性">雌性</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="catDescription">描述 *</label>
+                        <textarea id="catDescription" name="description" placeholder="请描述这只猫咪的性格、健康状况等信息..." required></textarea>
+                    </div>
+                    
+                    <!-- Image upload would go here in a more advanced implementation -->
+                    <!-- For now, we'll just note that images will be added later -->
+                    <div class="form-group">
+                        <label for="catImage">猫咪图片</label>
+                        <input type="file" id="catImage" name="image" accept="image/*" disabled>
+                        <small>图片上传功能将在后续版本中实现</small>
+                    </div>
+                    
+                    <button type="submit" class="upload-btn">提交猫咪信息</button>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 流浪猫公益项目. 保留所有权利.</p>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if user is logged in
+            checkAuthentication();
+            
+            // Bind form submit event
+            document.getElementById('catUploadForm').addEventListener('submit', handleCatUpload);
+            document.getElementById('logoutBtn').addEventListener('click', logout);
+        });
+
+        function checkAuthentication() {
+            fetch('/api/current_user')
+                .then(response => response.json())
+                .then(user => {
+                    if (!user.id) {
+                        alert('请先登录后再上传猫咪信息');
+                        window.location.href = '/';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    window.location.href = '/';
+                });
+        }
+
+        function handleCatUpload(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const catData = {
+                name: formData.get('name'),
+                age: formData.get('age'),
+                gender: formData.get('gender'),
+                description: formData.get('description')
+            };
+            
+            // Validate required fields
+            if (!catData.name || !catData.age || !catData.gender || !catData.description) {
+                showError('请填写所有必填字段');
+                return;
+            }
+            
+            // Submit to API
+            fetch('/api/cats', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(catData)
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else {
+                    return response.json().then(err => Promise.reject(err));
+                }
+            })
+            .then(data => {
+                showSuccess();
+                document.getElementById('catUploadForm').reset();
+            })
+            .catch(error => {
+                showError(error.error || '上传失败，请稍后重试');
+            });
+        }
+
+        function showSuccess() {
+            document.getElementById('successMessage').style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+            
+            // Hide success message after 5 seconds
+            setTimeout(() => {
+                document.getElementById('successMessage').style.display = 'none';
+            }, 5000);
+        }
+
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorMessage').style.display = 'block';
+            document.getElementById('successMessage').style.display = 'none';
+        }
+
+        function logout() {
+            fetch('/api/logout', {
+                method: 'POST'
+            })
+            .then(() => {
+                window.location.href = '/';
+            })
+            .catch(error => console.error('Error:', error));
+        }
+    </script>
+</body>
+</html>

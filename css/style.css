@@ -300,3 +300,31 @@ footer {
         font-size: 1.5rem;
     }
 }
+
+/* 用户信息样式 */
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-left: auto;
+}
+
+.user-info span {
+    color: white;
+    font-weight: bold;
+}
+
+.user-info button {
+    background-color: #ff6b6b;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+}
+
+.user-info button:hover {
+    background-color: #ff5252;
+}

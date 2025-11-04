@@ -1,0 +1,9 @@
+# Database
+data/
+*.db
+
+# Log files
+*.log
+
+# Environment files
+.env
