@@ -236,6 +236,16 @@ class AuthSystem {
         const uploadBtn = document.getElementById('uploadCatBtn');
         if (uploadBtn) uploadBtn.style.display = 'inline-block';
         
+        // Show messages button
+        const messagesBtn = document.createElement('button');
+        messagesBtn.id = 'messagesBtn';
+        messagesBtn.textContent = '消息中心';
+        messagesBtn.style.marginLeft = '10px';
+        messagesBtn.addEventListener('click', () => {
+            window.location.href = '/messages';
+        });
+        uploadBtn.parentNode.insertBefore(messagesBtn, uploadBtn.nextSibling);
+        
         // If admin, show admin button
         if (user.is_admin) {
             const adminBtn = document.getElementById('adminBtn');
@@ -278,8 +288,10 @@ class AuthSystem {
             // Hide upload and admin buttons
             const uploadBtn = document.getElementById('uploadCatBtn');
             const adminBtn = document.getElementById('adminBtn');
+            const messagesBtn = document.getElementById('messagesBtn');
             if (uploadBtn) uploadBtn.style.display = 'none';
             if (adminBtn) adminBtn.style.display = 'none';
+            if (messagesBtn) messagesBtn.remove();
             
             // Remove user info
             const userInfo = document.querySelector('.user-info');

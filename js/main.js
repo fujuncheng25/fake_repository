@@ -8,7 +8,32 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 加载猫咪信息
     loadCatData();
+    
+    // Fetch dynamic content
+    fetchContent('home_intro', 'home-intro-title', 'home-intro-content');
+    fetchContent('about_mission', 'about-mission-title', 'about-mission-content');
 });
+
+function fetchContent(contentId, titleElementId, contentElementId) {
+    fetch(`/api/content/${contentId}`)
+        .then(response => {
+            if (response.ok) {
+                return response.json();
+            }
+            return null;
+        })
+        .then(data => {
+            if (data) {
+                const titleElement = document.getElementById(titleElementId);
+                const contentElement = document.getElementById(contentElementId);
+                if (titleElement) titleElement.textContent = data.title;
+                if (contentElement) contentElement.textContent = data.content;
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching content:', error);
+        });
+}
 
 function initializeApp() {
     console.log('流浪猫公益项目应用已启动');
@@ -42,6 +67,12 @@ function bindAuthEvents() {
     // 绑定新按钮事件
     document.getElementById('uploadCatBtn').addEventListener('click', function() {
         window.location.href = '/upload';
+    });
+    
+    document.addEventListener('click', function(e) {
+        if (e.target && e.target.id === 'messagesBtn') {
+            window.location.href = '/messages';
+        }
     });
     
     document.getElementById('adminBtn').addEventListener('click', function() {
@@ -156,8 +187,10 @@ function updateUIAfterLogout() {
         // Hide upload and admin buttons
         const uploadBtn = document.getElementById('uploadCatBtn');
         const adminBtn = document.getElementById('adminBtn');
+        const messagesBtn = document.getElementById('messagesBtn');
         if (uploadBtn) uploadBtn.style.display = 'none';
         if (adminBtn) adminBtn.style.display = 'none';
+        if (messagesBtn) messagesBtn.remove();
         
         // Show login/register buttons
         const loginBtn = document.getElementById('loginBtn');
@@ -297,10 +330,19 @@ function fallbackToHardcodedData() {
 function createCatCard(cat) {
     const card = document.createElement('div');
     card.className = 'cat-card';
-    card.innerHTML = `
-        <div class="image-placeholder" style="background-color: #f0f0f0; height: 200px; display: flex; align-items: center; justify-content: center;">
+    
+    // Check if cat has an image path
+    let imageHtml = '';
+    if (cat.image_path) {
+        imageHtml = `<img src="/${cat.image_path}" alt="${cat.name}" onerror="this.parentElement.innerHTML='<div class=\\'image-placeholder\\' style=\\'background-color: #f0f0f0; height: 200px; display: flex; align-items: center; justify-content: center;\\'><span>猫咪图片</span></div>';">`;
+    } else {
+        imageHtml = `<div class="image-placeholder" style="background-color: #f0f0f0; height: 200px; display: flex; align-items: center; justify-content: center;">
             <span>猫咪图片</span>
-        </div>
+        </div>`;
+    }
+    
+    card.innerHTML = `
+        ${imageHtml}
         <div class="info">
             <h3>${cat.name}</h3>
             <p><strong>年龄:</strong> ${cat.age}</p>
