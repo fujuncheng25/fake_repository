@@ -161,10 +161,22 @@ class AuthSystem {
             }
         })
         .then(data => {
+<<<<<<< HEAD
             alert('注册成功！');
             this.closeModal('register');
             // 自动登录
             this.login(email, password);
+=======
+            if (data.email_sent) {
+                alert('注册成功！\n\n我们已向您的邮箱发送了一封验证邮件。\n请检查您的邮箱并点击验证链接来激活您的账户。\n\n验证后您才能登录。');
+            } else {
+                alert('注册成功！\n\n注意：验证邮件发送失败。\n请联系管理员或稍后重试。');
+            }
+            this.closeModal('register');
+            // Clear form
+            document.getElementById('registerForm').reset();
+            // Don't auto-login - user needs to verify email first
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         })
         .catch(error => {
             alert(error.error || '注册失败');
@@ -215,6 +227,12 @@ class AuthSystem {
             this.closeModal('login');
             // Update the UI to show the user is logged in
             this.updateUIAfterLogin(user);
+<<<<<<< HEAD
+=======
+            if (!user.is_verified && !user.is_admin) {
+                alert('您已登录，但邮箱尚未验证。\n\n您暂时不能上传猫咪信息或进行某些操作。\n请前往邮箱完成验证，或联系管理员。');
+            }
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         })
         .catch(error => {
             alert(error.error || '登录失败');
@@ -234,7 +252,17 @@ class AuthSystem {
         
         // Show upload button
         const uploadBtn = document.getElementById('uploadCatBtn');
+<<<<<<< HEAD
         if (uploadBtn) uploadBtn.style.display = 'inline-block';
+=======
+        if (uploadBtn) {
+            if (user.is_verified || user.is_admin) {
+                uploadBtn.style.display = 'inline-block';
+            } else {
+                uploadBtn.style.display = 'none';
+            }
+        }
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         
         // Show messages button
         const messagesBtn = document.createElement('button');

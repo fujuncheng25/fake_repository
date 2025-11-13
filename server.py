@@ -11,6 +11,12 @@ import urllib.parse
 from urllib.parse import unquote
 from http.cookies import SimpleCookie
 import cgi
+<<<<<<< HEAD
+=======
+import secrets
+import urllib.request
+import urllib.error
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
 
 PORT = 40276
 HOST = "0.0.0.0"
@@ -43,6 +49,15 @@ class DatabaseManager:
             )
         ''')
         
+<<<<<<< HEAD
+=======
+        # Add rejection column if it doesn't exist
+        try:
+            cursor.execute('ALTER TABLE cats ADD COLUMN is_rejected BOOLEAN DEFAULT 0')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         # Create users table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -51,10 +66,29 @@ class DatabaseManager:
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 is_admin BOOLEAN DEFAULT 0,
+<<<<<<< HEAD
+=======
+                is_verified BOOLEAN DEFAULT 0,
+                verification_token TEXT,
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
+<<<<<<< HEAD
+=======
+        # Add verification columns if they don't exist (for existing databases)
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT 0')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN verification_token TEXT')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         # Create adoption_requests table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS adoption_requests (
@@ -93,6 +127,18 @@ class DatabaseManager:
             )
         ''')
         
+<<<<<<< HEAD
+=======
+        # Create settings table for system configuration
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         # Insert default content if not exists
         cursor.execute("SELECT COUNT(*) FROM content WHERE id = 'home_intro'")
         if cursor.fetchone()[0] == 0:
@@ -114,8 +160,13 @@ class DatabaseManager:
             # Create default admin user (admin@cats.com / password: admin123)
             password_hash = hashlib.sha256("admin123".encode()).hexdigest()
             cursor.execute('''
+<<<<<<< HEAD
                 INSERT INTO users (name, email, password_hash, is_admin)
                 VALUES (?, ?, ?, 1)
+=======
+                INSERT INTO users (name, email, password_hash, is_admin, is_verified)
+                VALUES (?, ?, ?, 1, 1)
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
             ''', ("Admin User", "admin@cats.com", password_hash))
         
         conn.commit()
@@ -145,24 +196,51 @@ class DatabaseManager:
         return cat_id
     
     def get_all_cats_admin(self):
+<<<<<<< HEAD
         """Get all cats (including pending) for admin view"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM cats ORDER BY created_at DESC")
+=======
+        """Get all cats (including pending) for admin view with owner info"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 
+                c.*,
+                u.name AS owner_name,
+                u.email AS owner_email
+            FROM cats c
+            LEFT JOIN users u ON c.owner_id = u.id
+            ORDER BY c.created_at DESC
+        ''')
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         cats = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return cats
     
+<<<<<<< HEAD
     def update_cat_approval(self, cat_id, is_approved):
         """Update cat approval status"""
+=======
+    def update_cat_approval(self, cat_id, is_approved, is_rejected=0):
+        """Update cat approval/rejection status"""
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE cats 
+<<<<<<< HEAD
             SET is_approved = ?
             WHERE id = ?
         ''', (is_approved, cat_id))
+=======
+            SET is_approved = ?, is_rejected = ?
+            WHERE id = ?
+        ''', (is_approved, is_rejected, cat_id))
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         conn.commit()
         conn.close()
     
@@ -176,6 +254,7 @@ class DatabaseManager:
         conn.close()
         return dict(user) if user else None
     
+<<<<<<< HEAD
     def create_user(self, name, email, password):
         """Create a new user"""
         password_hash = hashlib.sha256(password.encode()).hexdigest()
@@ -193,13 +272,28 @@ class DatabaseManager:
             result = None
         conn.close()
         return result
+=======
+    def get_user_by_id(self, user_id):
+        """Get user by ID"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        user = cursor.fetchone()
+        conn.close()
+        return dict(user) if user else None
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
     
     def get_all_users(self):
         """Get all users (for admin)"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+<<<<<<< HEAD
         cursor.execute("SELECT id, name, email, is_admin, created_at FROM users ORDER BY created_at DESC")
+=======
+        cursor.execute("SELECT id, name, email, is_admin, is_verified, created_at FROM users ORDER BY created_at DESC")
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         users = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return users
@@ -326,10 +420,180 @@ class DatabaseManager:
         ''', (content_id, title, content_text))
         conn.commit()
         conn.close()
+<<<<<<< HEAD
+=======
+    
+    def get_setting(self, key):
+        """Get a setting value by key"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else None
+    
+    def set_setting(self, key, value):
+        """Set a setting value"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO settings (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        ''', (key, value))
+        conn.commit()
+        conn.close()
+    
+    def create_user(self, name, email, password):
+        """Create a new user with verification token"""
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+        verification_token = secrets.token_urlsafe(32)
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO users (name, email, password_hash, verification_token, is_verified)
+                VALUES (?, ?, ?, ?, 0)
+            ''', (name, email, password_hash, verification_token))
+            user_id = cursor.lastrowid
+            conn.commit()
+            result = (user_id, verification_token)
+        except sqlite3.IntegrityError:
+            result = None
+        conn.close()
+        return result
+    
+    def verify_user_email(self, token):
+        """Verify user email by token"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE users 
+            SET is_verified = 1, verification_token = NULL
+            WHERE verification_token = ? AND is_verified = 0
+        ''', (token,))
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
+    
+    def update_user_verification_status(self, user_id, is_verified):
+        """Manually update user verification status (admin only)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE users 
+            SET is_verified = ?
+            WHERE id = ?
+        ''', (1 if is_verified else 0, user_id))
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
+    
+    def delete_user(self, user_id):
+        """Delete a user and related data"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            # Delete messages where user is sender or receiver
+            cursor.execute('DELETE FROM messages WHERE sender_id = ? OR receiver_id = ?', (user_id, user_id))
+            # Delete adoption requests by user
+            cursor.execute('DELETE FROM adoption_requests WHERE user_id = ?', (user_id,))
+            # Remove ownership of cats (keep cats but clear owner)
+            cursor.execute('UPDATE cats SET owner_id = NULL WHERE owner_id = ?', (user_id,))
+            # Delete user record (only non-admin)
+            cursor.execute('DELETE FROM users WHERE id = ? AND is_admin = 0', (user_id,))
+            success = cursor.rowcount > 0
+            conn.commit()
+            return success
+        finally:
+            conn.close()
+    
+    def get_user_by_verification_token(self, token):
+        """Get user by verification token"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE verification_token = ?", (token,))
+        user = cursor.fetchone()
+        conn.close()
+        return dict(user) if user else None
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
 
 # Initialize database
 db = DatabaseManager(DB_PATH)
 
+<<<<<<< HEAD
+=======
+def send_verification_email(email, name, token):
+    """Send verification email via Resend API"""
+    api_key = db.get_setting('resend_api_key')
+    if not api_key:
+        print("Warning: Resend API key not configured. Email not sent.")
+        return False
+    
+    # Get the base URL from settings or use default
+    base_url = db.get_setting('base_url') or f"http://{HOST}:{PORT}"
+    verification_url = f"{base_url}/verify-email?token={token}"
+    
+    # Get "from" email address from settings or use default
+    from_email = db.get_setting('resend_from_email') or "noreply@resend.dev"
+    
+    # Prepare email data for Resend API
+    email_data = {
+        "from": from_email,
+        "to": [email],
+        "subject": "请验证您的邮箱地址 - 流浪猫公益项目",
+        "html": f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #4CAF50;">欢迎加入流浪猫公益项目！</h2>
+                <p>亲爱的 {name}，</p>
+                <p>感谢您注册我们的平台。请点击下面的链接来验证您的邮箱地址：</p>
+                <p style="text-align: center; margin: 30px 0;">
+                    <a href="{verification_url}" 
+                       style="background-color: #4CAF50; color: white; padding: 12px 24px; 
+                              text-decoration: none; border-radius: 5px; display: inline-block;">
+                        验证邮箱
+                    </a>
+                </p>
+                <p>或者复制以下链接到浏览器中打开：</p>
+                <p style="word-break: break-all; color: #666;">{verification_url}</p>
+                <p>如果您没有注册此账户，请忽略此邮件。</p>
+                <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+                <p style="color: #999; font-size: 12px;">此邮件由系统自动发送，请勿回复。</p>
+            </div>
+        </body>
+        </html>
+        """
+    }
+    
+    # Send request to Resend API
+    try:
+        req = urllib.request.Request(
+            'https://api.resend.com/emails',
+            data=json.dumps(email_data).encode('utf-8'),
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json'
+            }
+        )
+        response = urllib.request.urlopen(req)
+        if response.getcode() == 200:
+            return True
+        else:
+            print(f"Resend API error: {response.getcode()}")
+            return False
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        print(f"Resend API HTTP error: {e.code} - {error_body}")
+        return False
+    except Exception as e:
+        print(f"Error sending email: {str(e)}")
+        return False
+
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
 class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         # 添加CORS头部
@@ -377,6 +641,7 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_logout()
         elif self.path.startswith('/api/cats/'):
             # Handle cat approval/rejection
+<<<<<<< HEAD
             path_parts = self.path.split('/')
             if len(path_parts) == 4 and path_parts[3] == 'approve':
                 cat_id = int(path_parts[2])
@@ -387,12 +652,64 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             else:
                 self.send_response(404)
                 self.end_headers()
+=======
+            path_parts = [part for part in self.path.split('/') if part]
+            try:
+                if len(path_parts) == 4 and path_parts[0] == 'api' and path_parts[1] == 'cats':
+                    cat_id = int(path_parts[2])
+                    if path_parts[3] == 'approve':
+                        self.handle_approve_cat(cat_id)
+                        return
+                    if path_parts[3] == 'reject':
+                        self.handle_reject_cat(cat_id)
+                        return
+                    if path_parts[3] == 'restore':
+                        self.handle_restore_cat(cat_id)
+                        return
+            except ValueError:
+                pass
+
+            self.send_response(404)
+            self.end_headers()
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         elif self.path == '/api/messages':
             self.handle_send_message()
         elif self.path.startswith('/api/content/'):
             # Handle content update
             content_id = self.path.split('/')[-1]
             self.handle_update_content(content_id)
+<<<<<<< HEAD
+=======
+        elif self.path == '/api/verify-email':
+            self.handle_verify_email_post()
+        elif self.path == '/api/admin/settings/resend-api-key':
+            self.handle_update_resend_api_key()
+        elif self.path == '/api/admin/settings/resend-from-email':
+            self.handle_update_resend_from_email()
+        elif self.path == '/api/admin/settings/base-url':
+            self.handle_update_base_url()
+        elif '/api/users/' in self.path and self.path.endswith('/verify'):
+            # Handle user verification status update
+            # Path format: /api/users/{user_id}/verify
+            path_parts = self.path.split('/')
+            try:
+                user_id = int(path_parts[3])  # /api/users/{id}/verify
+                self.handle_update_user_verification(user_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid user ID"}).encode())
+        elif '/api/users/' in self.path and self.path.endswith('/delete'):
+            # Handle delete user request
+            path_parts = self.path.split('/')
+            try:
+                user_id = int(path_parts[3])  # /api/users/{id}/delete
+                self.handle_delete_user(user_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid user ID"}).encode())
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         else:
             self.send_response(404)
             self.end_headers()
@@ -421,9 +738,23 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 # Get specific content by ID
                 content_id = self.path.split('/')[-1]
                 self.handle_get_content(content_id)
+<<<<<<< HEAD
             else:
                 self.send_response(404)
                 self.end_headers()
+=======
+            elif self.path == '/api/admin/settings/resend-api-key':
+                self.handle_get_resend_api_key()
+            elif self.path == '/api/admin/settings/resend-from-email':
+                self.handle_get_resend_from_email()
+            elif self.path == '/api/admin/settings/base-url':
+                self.handle_get_base_url()
+            else:
+                self.send_response(404)
+                self.end_headers()
+        elif self.path.startswith('/verify-email'):
+            self.handle_verify_email_get()
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         elif self.path.startswith('/uploads/'):
             # Serve uploaded files
             try:
@@ -512,7 +843,12 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "id": user['id'],
                 "name": user['name'],
                 "email": user['email'],
+<<<<<<< HEAD
                 "is_admin": bool(user['is_admin'])
+=======
+                "is_admin": bool(user['is_admin']),
+                "is_verified": bool(user.get('is_verified', False))
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
             }
             self.wfile.write(json.dumps(response).encode())
         else:
@@ -551,11 +887,33 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
         
         # Create user
+<<<<<<< HEAD
         user_id = db.create_user(name, email, password)
         if user_id:
             self.send_response(201)
             self.end_headers()
             self.wfile.write(json.dumps({"message": "User created successfully"}).encode())
+=======
+        result = db.create_user(name, email, password)
+        if result:
+            user_id, verification_token = result
+            # Send verification email
+            email_sent = send_verification_email(email, name, verification_token)
+            if email_sent:
+                self.send_response(201)
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "message": "User created successfully. Please check your email to verify your account.",
+                    "email_sent": True
+                }).encode())
+            else:
+                self.send_response(201)
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "message": "User created successfully, but verification email could not be sent. Please contact support.",
+                    "email_sent": False
+                }).encode())
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         else:
             self.send_response(400)
             self.end_headers()
@@ -581,7 +939,11 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
         
         # Update cat approval status
+<<<<<<< HEAD
         db.update_cat_approval(cat_id, 1)
+=======
+        db.update_cat_approval(cat_id, 1, 0)
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
@@ -599,12 +961,35 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
         
         # Update cat approval status
+<<<<<<< HEAD
         db.update_cat_approval(cat_id, 0)
+=======
+        db.update_cat_approval(cat_id, 0, 1)
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps({"message": "Cat rejected successfully"}).encode())
+<<<<<<< HEAD
+=======
+
+    def handle_restore_cat(self, cat_id):
+        """Handle restoring a cat submission back to pending"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+        
+        db.update_cat_approval(cat_id, 0, 0)
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"message": "Cat restored to pending review"}).encode())
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
     
     def handle_get_cats(self):
         """Handle getting all approved cats"""
@@ -650,6 +1035,16 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": "Authentication required"}).encode())
             return
         
+<<<<<<< HEAD
+=======
+        # Require verified email for uploading cats
+        if not user.get('is_verified', False) and not user.get('is_admin', False):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Email not verified. Please verify your email to upload cats."}).encode())
+            return
+        
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         # Parse form data (including files)
         form = cgi.FieldStorage(
             fp=self.rfile,
@@ -912,6 +1307,324 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps({"message": "Logged out successfully"}).encode())
     
+<<<<<<< HEAD
+=======
+    def handle_verify_email_get(self):
+        """Handle GET request for email verification page"""
+        query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        token = query_params.get('token', [None])[0]
+        
+        if not token:
+            self.send_response(400)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            self.wfile.write(b"<h1>Invalid verification link</h1>")
+            return
+        
+        # Verify the token
+        success = db.verify_user_email(token)
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        
+        if success:
+            html = """
+            <!DOCTYPE html>
+            <html lang="zh-CN">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>邮箱验证成功</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                    .success { color: #4CAF50; font-size: 24px; margin: 20px 0; }
+                    a { color: #4CAF50; text-decoration: none; }
+                </style>
+            </head>
+            <body>
+                <h1 class="success">✓ 邮箱验证成功！</h1>
+                <p>您的邮箱地址已成功验证。现在您可以登录您的账户了。</p>
+                <p><a href="/">返回首页</a></p>
+            </body>
+            </html>
+            """
+        else:
+            html = """
+            <!DOCTYPE html>
+            <html lang="zh-CN">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>邮箱验证失败</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                    .error { color: #dc3545; font-size: 24px; margin: 20px 0; }
+                    a { color: #4CAF50; text-decoration: none; }
+                </style>
+            </head>
+            <body>
+                <h1 class="error">✗ 邮箱验证失败</h1>
+                <p>验证链接无效或已过期。请重新注册或联系支持。</p>
+                <p><a href="/">返回首页</a></p>
+            </body>
+            </html>
+            """
+        self.wfile.write(html.encode())
+    
+    def handle_verify_email_post(self):
+        """Handle POST request for API email verification"""
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
+        token = data.get('token')
+        if not token:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Token required"}).encode())
+            return
+        
+        success = db.verify_user_email(token)
+        if success:
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({"message": "Email verified successfully"}).encode())
+        else:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid or expired token"}).encode())
+    
+    def handle_get_resend_api_key(self):
+        """Get Resend API key (admin only)"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+        
+        api_key = db.get_setting('resend_api_key')
+        # Return masked version for security (only show last 4 characters)
+        masked_key = None
+        if api_key:
+            masked_key = '*' * (len(api_key) - 4) + api_key[-4:] if len(api_key) > 4 else '****'
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"api_key": masked_key, "is_configured": api_key is not None}).encode())
+    
+    def handle_update_resend_api_key(self):
+        """Update Resend API key (admin only)"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+        
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
+        api_key = data.get('api_key', '').strip()
+        if not api_key:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "API key is required"}).encode())
+            return
+        
+        try:
+            db.set_setting('resend_api_key', api_key)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({"message": "Resend API key updated successfully"}).encode())
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+    
+    def handle_get_resend_from_email(self):
+        """Get Resend from email address (admin only)"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+        
+        from_email = db.get_setting('resend_from_email') or "noreply@resend.dev"
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"from_email": from_email}).encode())
+    
+    def handle_update_resend_from_email(self):
+        """Update Resend from email address (admin only)"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+        
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
+        from_email = data.get('from_email', '').strip()
+        if not from_email:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "From email address is required"}).encode())
+            return
+        
+        # Basic email validation
+        if '@' not in from_email:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid email address format"}).encode())
+            return
+        
+        try:
+            db.set_setting('resend_from_email', from_email)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({"message": "From email address updated successfully"}).encode())
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+    
+    def handle_get_base_url(self):
+        """Get the base website URL (admin only)"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+        
+        base_url = db.get_setting('base_url') or ''
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"base_url": base_url}).encode())
+    
+    def handle_update_base_url(self):
+        """Update the base website URL (admin only)"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+        
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
+        base_url = data.get('base_url', '').strip()
+        if not base_url:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Base URL is required"}).encode())
+            return
+        
+        # Basic validation to ensure it resembles a URL
+        if not base_url.startswith('http://') and not base_url.startswith('https://'):
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Base URL must start with http:// or https://"}).encode())
+            return
+        
+        try:
+            db.set_setting('base_url', base_url.rstrip('/'))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({"message": "Base URL updated successfully"}).encode())
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+    
+    def handle_update_user_verification(self, user_id):
+        """Update user verification status (admin only)"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+        
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
+        is_verified = data.get('is_verified', False)
+        
+        try:
+            success = db.update_user_verification_status(user_id, is_verified)
+            if success:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": "User verification status updated successfully"}).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "User not found"}).encode())
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+    
+    def handle_delete_user(self, user_id):
+        """Delete a user account (admin only)"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+        
+        # Consume request body if present
+        content_length = int(self.headers.get('Content-Length', 0) or 0)
+        if content_length:
+            self.rfile.read(content_length)
+        
+        # Prevent deleting admin accounts
+        target_user = db.get_user_by_id(user_id)
+        if not target_user:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "User not found"}).encode())
+            return
+        
+        if target_user.get('is_admin'):
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Cannot delete administrator accounts"}).encode())
+            return
+        
+        try:
+            success = db.delete_user(user_id)
+            if success:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": "User deleted successfully"}).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "User not found or could not be deleted"}).encode())
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+    
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
     def guess_type(self, path):
         # 使用mimetypes模块猜测MIME类型
         mimetype, _ = mimetypes.guess_type(path)
