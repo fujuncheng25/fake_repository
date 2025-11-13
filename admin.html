@@ -146,6 +146,205 @@
             border-radius: 4px;
             cursor: pointer;
         }
+<<<<<<< HEAD
+=======
+        
+        .cat-summary-row td {
+            vertical-align: middle;
+        }
+
+        .cat-detail-row.hidden {
+            display: none;
+        }
+
+        .cat-detail-card {
+            background-color: #ffffff;
+            border: 1px solid #e8e8e8;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+
+        .cat-detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+        }
+
+        .cat-detail-header h3 {
+            margin: 0 0 8px;
+        }
+
+        .cat-detail-body {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 24px;
+            margin-top: 18px;
+        }
+
+        .cat-detail-body > * {
+            flex: 1 1 280px;
+        }
+
+        .cat-image-wrapper {
+            max-width: 280px;
+        }
+
+        .cat-detail-image {
+            width: 100%;
+            max-height: 200px;
+            object-fit: cover;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+        }
+
+        .cat-detail-placeholder {
+            width: 100%;
+            min-height: 160px;
+            background: repeating-linear-gradient(135deg, #f5f5f5, #f5f5f5 10px, #eaeaea 10px, #eaeaea 20px);
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .cat-meta dl {
+            margin: 0;
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 8px 18px;
+        }
+
+        .cat-meta dt {
+            font-weight: 600;
+            color: #444;
+        }
+
+        .cat-meta dd {
+            margin: 0;
+            color: #555;
+            line-height: 1.5;
+        }
+
+        .cat-description {
+            background-color: #f8f9fa;
+            padding: 16px;
+            border-radius: 8px;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .cat-feedback textarea,
+        .cat-feedback input[type="text"] {
+            width: 100%;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 0.95rem;
+            font-family: inherit;
+        }
+
+        .cat-feedback textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        .feedback-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .feedback-status {
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: #666;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 10px;
+            color: #666;
+            font-size: 1rem;
+        }
+
+        .cat-basic {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .cat-basic .cat-name {
+            font-weight: 600;
+        }
+
+        .cat-basic .cat-badge {
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background-color: #eef2f7;
+            color: #53738c;
+        }
+
+        .btn-link {
+            background: none;
+            border: none;
+            color: #4CAF50;
+            cursor: pointer;
+            padding: 0;
+            font-size: 0.9rem;
+        }
+
+        .btn-link:hover {
+            text-decoration: underline;
+        }
+
+        .action-buttons.stacked {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .section-count {
+            font-size: 0.85rem;
+            color: #666;
+            margin-left: 8px;
+        }
+
+        .admin-message {
+            display: none;
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            font-size: 0.95rem;
+        }
+
+        .admin-message.show {
+            display: block;
+        }
+
+        .admin-message.success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+
+        .admin-message.error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+
+        .admin-message.info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
     </style>
 </head>
 <body>
@@ -176,6 +375,10 @@
                     <button id="refreshBtn" class="btn btn-primary">刷新数据</button>
                 </div>
             </div>
+<<<<<<< HEAD
+=======
+            <div id="adminMessageBar" class="admin-message" role="status" aria-live="polite"></div>
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
 
             <div class="stats-grid">
                 <div class="stat-card">
@@ -220,6 +423,33 @@
                 </div>
             </div>
 
+<<<<<<< HEAD
+=======
+            <div class="admin-section" id="declinedCatsSection" style="display: none;">
+                <h2>已拒绝的猫咪提交 <span id="declinedCatsCount" class="section-count"></span></h2>
+                <div class="admin-content">
+                    <table id="declinedCatsTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>名字</th>
+                                <th>年龄</th>
+                                <th>性别</th>
+                                <th>描述</th>
+                                <th>上传者</th>
+                                <th>状态</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Declined data will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
             <div class="admin-section">
                 <h2>用户管理</h2>
                 <div class="admin-content">
@@ -230,6 +460,10 @@
                                 <th>姓名</th>
                                 <th>邮箱</th>
                                 <th>角色</th>
+<<<<<<< HEAD
+=======
+                                <th>验证状态</th>
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
                                 <th>创建时间</th>
                                 <th>操作</th>
                             </tr>
@@ -268,6 +502,74 @@
                 <p>管理网站各个页面的文本内容。</p>
                 <button onclick="window.location.href='/content-management'" class="admin-btn">管理网站内容</button>
             </div>
+<<<<<<< HEAD
+=======
+
+            <div class="admin-section">
+                <h2>邮件服务配置</h2>
+                <div class="admin-content">
+                    <p>配置 Resend API 密钥以启用邮箱验证功能。</p>
+                    <div style="margin: 20px 0;">
+                        <label for="resendApiKey" style="display: block; margin-bottom: 10px; font-weight: bold;">
+                            Resend API Key:
+                        </label>
+                        <input 
+                            type="password" 
+                            id="resendApiKey" 
+                            placeholder="输入您的 Resend API 密钥"
+                            style="width: 100%; max-width: 500px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                        />
+                        <p id="apiKeyStatus" style="margin-top: 10px; color: #666; font-size: 14px;"></p>
+                    </div>
+                    <div style="margin: 20px 0;">
+                        <label for="resendFromEmail" style="display: block; margin-bottom: 10px; font-weight: bold;">
+                            发件人邮箱地址 (From Email):
+                        </label>
+                        <input 
+                            type="email" 
+                            id="resendFromEmail" 
+                            placeholder="例如: noreply@yourdomain.com 或 your-email@resend.dev"
+                            style="width: 100%; max-width: 500px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                        />
+                        <p id="fromEmailStatus" style="margin-top: 10px; color: #666; font-size: 14px;"></p>
+                        <p style="margin-top: 5px; color: #666; font-size: 12px;">
+                            注意：在测试模式下，Resend 只允许向您自己的邮箱地址发送邮件。要发送给其他收件人，请使用已验证的域名。
+                        </p>
+                    </div>
+                    <div style="margin: 20px 0;">
+                        <label for="siteBaseUrl" style="display: block; margin-bottom: 10px; font-weight: bold;">
+                            网站基础 URL (例如: https://yourdomain.com):
+                        </label>
+                        <input 
+                            type="url" 
+                            id="siteBaseUrl" 
+                            placeholder="输入您网站的实际访问地址，用于邮件中的链接"
+                            style="width: 100%; max-width: 500px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                        />
+                        <p id="baseUrlStatus" style="margin-top: 10px; color: #666; font-size: 14px;"></p>
+                        <p style="margin-top: 5px; color: #666; font-size: 12px;">
+                            该 URL 将用于生成邮件中的验证链接，请确保以 http:// 或 https:// 开头。
+                        </p>
+                    </div>
+                    <div>
+                        <button id="saveApiKeyBtn" class="btn btn-primary">保存 API 密钥</button>
+                        <button id="saveFromEmailBtn" class="btn btn-primary" style="margin-left: 10px;">保存发件人邮箱</button>
+                        <button id="saveBaseUrlBtn" class="btn btn-primary" style="margin-left: 10px;">保存网站 URL</button>
+                        <button id="testApiKeyBtn" class="btn btn-secondary" style="margin-left: 10px;">测试连接</button>
+                    </div>
+                    <div style="margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 4px;">
+                        <h3 style="margin-top: 0;">如何获取 Resend API 密钥：</h3>
+                        <ol style="line-height: 1.8;">
+                            <li>访问 <a href="https://resend.com" target="_blank">resend.com</a> 并注册账户</li>
+                            <li>登录后，进入 API Keys 页面</li>
+                            <li>创建一个新的 API 密钥</li>
+                            <li>复制密钥并粘贴到上面的输入框中</li>
+                            <li>点击"保存 API 密钥"按钮</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         </div>
     </main>
 
@@ -282,12 +584,46 @@
         document.addEventListener('DOMContentLoaded', function() {
             checkAdminAccess();
             loadDashboardData();
+<<<<<<< HEAD
+=======
+            loadResendApiKey();
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
             
             // Bind events
             document.getElementById('logoutBtn').addEventListener('click', logout);
             document.getElementById('refreshBtn').addEventListener('click', loadDashboardData);
+<<<<<<< HEAD
         });
 
+=======
+            document.getElementById('saveApiKeyBtn').addEventListener('click', saveResendApiKey);
+            document.getElementById('saveFromEmailBtn').addEventListener('click', saveResendFromEmail);
+            document.getElementById('saveBaseUrlBtn').addEventListener('click', saveBaseUrl);
+            document.getElementById('testApiKeyBtn').addEventListener('click', testResendApiKey);
+        });
+
+        let adminMessageTimeout;
+
+        function showActionMessage(message, type = 'info') {
+            const bar = document.getElementById('adminMessageBar');
+            if (!bar) {
+                alert(message);
+                return;
+            }
+            bar.textContent = message;
+            bar.className = `admin-message show ${type}`;
+
+            if (adminMessageTimeout) {
+                clearTimeout(adminMessageTimeout);
+            }
+
+            adminMessageTimeout = setTimeout(() => {
+                bar.className = 'admin-message';
+                bar.textContent = '';
+            }, 4500);
+        }
+
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         function checkAdminAccess() {
             fetch('/api/current_user')
                 .then(response => response.json())
@@ -310,6 +646,7 @@
         }
 
         function loadCats() {
+<<<<<<< HEAD
             fetch('/api/admin/cats')
                 .then(response => response.json())
                 .then(cats => {
@@ -343,6 +680,493 @@
                     });
                 })
                 .catch(error => console.error('Error loading cats:', error));
+=======
+            fetch('/api/admin/cats', { credentials: 'include' })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('无法加载猫咪信息，请确认您已登录管理员账号。');
+                    }
+                    return response.json();
+                })
+                .then(cats => {
+                    const pendingTbody = document.querySelector('#catsTable tbody');
+                    if (!pendingTbody) {
+                        return;
+                    }
+
+                    const pendingCats = [];
+                    const declinedCats = [];
+                    let approvedCount = 0;
+
+                    cats.forEach(cat => {
+                        const isApproved = normalizeFlag(cat.is_approved);
+                        const isRejected = normalizeFlag(cat.is_rejected);
+                        if (isApproved) {
+                            approvedCount += 1;
+                        }
+                        if (isRejected) {
+                            declinedCats.push(cat);
+                        } else if (!isApproved) {
+                            pendingCats.push(cat);
+                        }
+                    });
+
+                    document.getElementById('catsCount').textContent = approvedCount;
+                    renderCatRows(pendingCats, pendingTbody, 'pending');
+                    renderDeclinedCats(declinedCats);
+                    bindCatTableEvents();
+                })
+                .catch(error => {
+                    console.error('Error loading cats:', error);
+                    showActionMessage(error.message || '加载猫咪信息时出错，请稍后重试。', 'error');
+                    const pendingTbody = document.querySelector('#catsTable tbody');
+                    if (pendingTbody) {
+                        pendingTbody.innerHTML = `<tr><td colspan="9" class="empty-state">${error.message || '加载猫咪信息时出错，请稍后重试。'}</td></tr>`;
+                    }
+                    renderDeclinedCats([]);
+                });
+        }
+
+        function renderCatRows(cats, tbody, mode) {
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            if (!cats.length) {
+                const emptyRow = document.createElement('tr');
+                const message = mode === 'pending'
+                    ? '暂无待审核的猫咪提交。'
+                    : '暂无数据。';
+                emptyRow.innerHTML = `<td colspan="9" class="empty-state">${message}</td>`;
+                tbody.appendChild(emptyRow);
+                return;
+            }
+
+            cats.forEach(cat => {
+                const { summaryRow, detailRow } = buildCatRow(cat, mode);
+                tbody.appendChild(summaryRow);
+                tbody.appendChild(detailRow);
+            });
+        }
+
+        function renderDeclinedCats(declinedCats) {
+            const section = document.getElementById('declinedCatsSection');
+            const tbody = document.querySelector('#declinedCatsTable tbody');
+            const countLabel = document.getElementById('declinedCatsCount');
+            if (!section || !tbody) return;
+
+            if (!declinedCats.length) {
+                section.style.display = 'none';
+                tbody.innerHTML = '';
+                if (countLabel) {
+                    countLabel.textContent = '';
+                }
+                return;
+            }
+
+            section.style.display = 'block';
+            if (countLabel) {
+                countLabel.textContent = `(${declinedCats.length})`;
+            }
+            renderCatRows(declinedCats, tbody, 'declined');
+        }
+
+        function buildCatRow(cat, mode) {
+            const catIdValue = Number(cat.id) || 0;
+            const catIdSafe = escapeHtml(String(catIdValue));
+            const ownerNameRaw = cat.owner_name || '未知用户';
+            const ownerEmailRaw = cat.owner_email || '未提供';
+            const createdAt = formatDateTime(cat.created_at);
+            const catNameRaw = cat.name || '未命名';
+            const catAgeRaw = cat.age || '—';
+            const catGenderRaw = cat.gender || '—';
+            const descriptionRaw = cat.description || '';
+            const descriptionPreviewText = truncateText(descriptionRaw || '未提供', 60);
+            const defaultSubject = `猫咪审核反馈 - ${catNameRaw}`;
+            const ownerIdRaw = cat.owner_id != null ? String(cat.owner_id) : '';
+            const ownerIdDisplay = ownerIdRaw || '—';
+            const imagePath = cat.image_path ? `/${encodeURI(cat.image_path)}` : '';
+
+            const isApproved = normalizeFlag(cat.is_approved);
+            const isRejected = normalizeFlag(cat.is_rejected);
+            const statusLabelText = isApproved ? '已批准' : isRejected ? '已拒绝' : '待审核';
+            const statusClass = isApproved ? 'status-approved' : isRejected ? 'status-rejected' : 'status-pending';
+
+            const catNameSafe = escapeHtml(catNameRaw);
+            const catAgeSafe = escapeHtml(catAgeRaw);
+            const catGenderSafe = escapeHtml(catGenderRaw);
+            const ownerNameSafe = escapeHtml(ownerNameRaw);
+            const ownerEmailSafe = ownerEmailRaw !== '未提供' ? escapeHtml(ownerEmailRaw) : '';
+            const descriptionPreviewSafe = escapeHtml(descriptionPreviewText);
+            const defaultSubjectSafe = escapeHtml(defaultSubject);
+            const ownerIdSafe = escapeHtml(ownerIdDisplay);
+            const statusLabelSafe = escapeHtml(statusLabelText);
+            const descriptionHtml = descriptionRaw && descriptionRaw.trim()
+                ? escapeHtml(descriptionRaw).replace(/\n/g, '<br>')
+                : '上传者未提供更多描述。';
+            const mailtoHref = ownerEmailRaw !== '未提供' ? `mailto:${encodeURIComponent(ownerEmailRaw)}` : '';
+            const mailtoHrefSafe = mailtoHref ? escapeHtml(mailtoHref) : '';
+            const feedbackDisabledAttr = ownerIdRaw ? '' : 'disabled';
+
+            let actionButtonsHtml = '';
+            if (mode === 'pending') {
+                actionButtonsHtml = `
+                    <button class="btn btn-primary approve-cat" data-cat-id="${catIdSafe}">批准</button>
+                    <button class="btn btn-danger reject-cat" data-cat-id="${catIdSafe}">拒绝</button>
+                `;
+            } else if (mode === 'declined') {
+                actionButtonsHtml = `
+                    <button class="btn btn-secondary restore-cat" data-cat-id="${catIdSafe}">恢复为待审核</button>
+                `;
+            }
+
+            const summaryRow = document.createElement('tr');
+            summaryRow.classList.add('cat-summary-row');
+            summaryRow.dataset.catId = String(catIdValue);
+            summaryRow.innerHTML = `
+                <td>${catIdSafe}</td>
+                <td>
+                    <div class="cat-basic">
+                        <span class="cat-name">${catNameSafe}</span>
+                        ${cat.image_path ? '<span class="cat-badge">含图片</span>' : ''}
+                    </div>
+                </td>
+                <td>${catAgeSafe}</td>
+                <td>${catGenderSafe}</td>
+                <td>${descriptionPreviewSafe}</td>
+                <td>
+                    <div>${ownerNameSafe}</div>
+                    ${ownerEmailRaw !== '未提供' ? `<button class="btn-link" data-email="${ownerEmailSafe}">发送邮件</button>` : '<span class="cat-badge">无邮箱</span>'}
+                </td>
+                <td><span class="status-badge ${statusClass}">${statusLabelSafe}</span></td>
+                <td title="${createdAt.full}">${createdAt.date} ${createdAt.time}</td>
+                <td>
+                    <div class="action-buttons stacked">
+                        ${actionButtonsHtml}
+                        <button class="btn btn-secondary toggle-details" data-cat-id="${catIdSafe}" aria-expanded="false">展开详情</button>
+                    </div>
+                </td>
+            `;
+
+            const emailButton = summaryRow.querySelector('.btn-link[data-email]');
+            if (emailButton && ownerEmailRaw !== '未提供') {
+                emailButton.dataset.email = ownerEmailRaw;
+            }
+
+            const detailRow = document.createElement('tr');
+            detailRow.classList.add('cat-detail-row', 'hidden');
+            detailRow.dataset.catId = String(catIdValue);
+            detailRow.innerHTML = `
+                <td colspan="9">
+                    <div class="cat-detail-card">
+                        <div class="cat-detail-header">
+                            <div>
+                                <h3>${catNameSafe || '未命名猫咪'}</h3>
+                                <div style="color:#666;font-size:0.9rem;">
+                                    提交时间：${createdAt.full}
+                                </div>
+                            </div>
+                            <button class="btn btn-secondary toggle-details" data-cat-id="${catIdSafe}" aria-expanded="true">收起详情</button>
+                        </div>
+                        <div class="cat-detail-body">
+                            <div class="cat-image-wrapper">
+                                ${cat.image_path ? `
+                                    <img src="${imagePath}" alt="${catNameSafe || '猫咪图片'}" class="cat-detail-image" onerror="this.replaceWith(createImageFallback())">
+                                ` : `
+                                    <div class="cat-detail-placeholder">未上传图片</div>
+                                `}
+                            </div>
+                            <div class="cat-meta">
+                                <dl>
+                                    <dt>猫咪名称</dt><dd>${catNameSafe}</dd>
+                                    <dt>年龄</dt><dd>${catAgeSafe}</dd>
+                                    <dt>性别</dt><dd>${catGenderSafe}</dd>
+                                    <dt>当前状态</dt><dd>${statusLabelSafe}</dd>
+                                    <dt>上传者</dt><dd>${ownerNameSafe}</dd>
+                                    <dt>上传者邮箱</dt><dd>${ownerEmailRaw !== '未提供' ? `<a href="${mailtoHrefSafe}">${ownerEmailSafe}</a>` : '未提供'}</dd>
+                                    <dt>上传者 ID</dt><dd>${ownerIdSafe}</dd>
+                                    <dt>猫咪编号</dt><dd>#${catIdSafe}</dd>
+                                </dl>
+                            </div>
+                            <div class="cat-description">
+                                <strong>猫咪描述</strong>
+                                <p style="margin-top:8px;">${descriptionHtml}</p>
+                            </div>
+                            <div class="cat-feedback">
+                                <label for="feedback-subject-${catIdSafe}" style="display:block;margin-bottom:6px;font-weight:600;">向上传者发送反馈</label>
+                                <input type="text" id="feedback-subject-${catIdSafe}" placeholder="反馈主题" value="${defaultSubjectSafe}">
+                                <textarea id="feedback-message-${catIdSafe}" placeholder="请输入您要发送给上传者的反馈内容，例如需要补充的资料或审核结果说明。"></textarea>
+                                <div class="feedback-actions">
+                                    <button class="btn btn-secondary reset-feedback" data-cat-id="${catIdSafe}">清空</button>
+                                    <button class="btn btn-primary send-feedback" data-cat-id="${catIdSafe}" data-owner-id="${escapeHtml(ownerIdRaw)}" ${feedbackDisabledAttr}>发送反馈</button>
+                                </div>
+                                <div class="feedback-status" id="feedback-status-${catIdSafe}">${ownerIdRaw ? '' : '无法发送反馈：缺少上传者信息。'}</div>
+                            </div>
+                        </div>
+                    </div>
+                </td>
+            `;
+
+            const sendButton = detailRow.querySelector('.send-feedback');
+            if (sendButton) {
+                if (ownerIdRaw) {
+                    sendButton.dataset.ownerId = ownerIdRaw;
+                } else {
+                    sendButton.dataset.ownerId = '';
+                    sendButton.setAttribute('disabled', 'disabled');
+                }
+            }
+
+            return { summaryRow, detailRow };
+        }
+
+        let catTableEventsBound = false;
+
+        function bindCatTableEvents() {
+            if (catTableEventsBound) return;
+            document.addEventListener('click', handleCatTableClick);
+            catTableEventsBound = true;
+        }
+
+        function handleCatTableClick(event) {
+            const target = event.target;
+            if (!target) return;
+
+            const toggleButton = target.closest('.toggle-details');
+            if (toggleButton) {
+                event.preventDefault();
+                const catId = toggleButton.dataset.catId;
+                toggleCatDetail(catId);
+                return;
+            }
+
+            const approveButton = target.closest('.approve-cat');
+            if (approveButton) {
+                event.preventDefault();
+                if (approveButton.disabled) return;
+                const catId = Number(approveButton.dataset.catId);
+                if (!Number.isNaN(catId)) {
+                    approveCat(catId);
+                }
+                return;
+            }
+
+            const rejectButton = target.closest('.reject-cat');
+            if (rejectButton) {
+                event.preventDefault();
+                if (rejectButton.disabled) return;
+                const catId = Number(rejectButton.dataset.catId);
+                if (!Number.isNaN(catId)) {
+                    rejectCat(catId);
+                }
+                return;
+            }
+
+            const restoreButton = target.closest('.restore-cat');
+            if (restoreButton) {
+                event.preventDefault();
+                if (restoreButton.disabled) return;
+                const catId = Number(restoreButton.dataset.catId);
+                if (!Number.isNaN(catId)) {
+                    restoreCat(catId);
+                }
+                return;
+            }
+
+            const emailButton = target.closest('.btn-link[data-email]');
+            if (emailButton) {
+                event.preventDefault();
+                const email = emailButton.dataset.email || emailButton.getAttribute('data-email');
+                if (email) {
+                    window.location.href = `mailto:${encodeURIComponent(email)}`;
+                }
+                return;
+            }
+
+            const sendButton = target.closest('.send-feedback');
+            if (sendButton) {
+                event.preventDefault();
+                if (sendButton.disabled) return;
+                const catId = Number(sendButton.dataset.catId);
+                const ownerId = Number(sendButton.dataset.ownerId);
+                sendFeedback(catId, ownerId);
+                return;
+            }
+
+            const resetButton = target.closest('.reset-feedback');
+            if (resetButton) {
+                event.preventDefault();
+                const catId = Number(resetButton.dataset.catId);
+                resetFeedback(catId);
+            }
+        }
+
+        function toggleCatDetail(catId) {
+            const summaryRow = document.querySelector(`.cat-summary-row[data-cat-id="${catId}"]`);
+            const detailRow = document.querySelector(`.cat-detail-row[data-cat-id="${catId}"]`);
+            if (!summaryRow || !detailRow) return;
+
+            const expanded = detailRow.classList.toggle('hidden');
+            const toggleButtons = document.querySelectorAll(`.toggle-details[data-cat-id="${catId}"]`);
+            toggleButtons.forEach(btn => {
+                const isExpanded = !expanded;
+                btn.textContent = isExpanded ? '收起详情' : '展开详情';
+                btn.setAttribute('aria-expanded', String(isExpanded));
+            });
+
+            if (!expanded) {
+                detailRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        function truncateText(text, limit = 60) {
+            if (!text) return '';
+            const trimmed = text.trim();
+            if (trimmed.length <= limit) return trimmed;
+            return trimmed.slice(0, limit) + '…';
+        }
+
+        function escapeHtml(value) {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function normalizeFlag(value) {
+            return value === true || value === 1 || value === '1';
+        }
+
+        function formatDateTime(value) {
+            if (!value) {
+                return { date: '—', time: '', full: '—' };
+            }
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) {
+                return { date: value, time: '', full: value };
+            }
+            return {
+                date: date.toLocaleDateString(),
+                time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                full: date.toLocaleString()
+            };
+        }
+
+        function createImageFallback() {
+            const placeholder = document.createElement('div');
+            placeholder.className = 'cat-detail-placeholder';
+            placeholder.textContent = '图片加载失败';
+            return placeholder;
+        }
+
+        function setCatActionButtonsLoading(catId, action, isLoading, loadingText) {
+            const selectorMap = {
+                approve: '.approve-cat',
+                reject: '.reject-cat',
+                restore: '.restore-cat'
+            };
+            const selector = selectorMap[action];
+            if (!selector) return;
+            const buttons = document.querySelectorAll(`${selector}[data-cat-id="${catId}"]`);
+            buttons.forEach(button => {
+                if (isLoading) {
+                    if (!button.dataset.originalText) {
+                        button.dataset.originalText = button.textContent;
+                    }
+                    button.disabled = true;
+                    if (loadingText) {
+                        button.textContent = loadingText;
+                    }
+                } else {
+                    button.disabled = false;
+                    if (button.dataset.originalText) {
+                        button.textContent = button.dataset.originalText;
+                        delete button.dataset.originalText;
+                    }
+                }
+            });
+        }
+
+        function sendFeedback(catId, ownerId) {
+            const statusEl = document.getElementById(`feedback-status-${catId}`);
+            const subjectInput = document.getElementById(`feedback-subject-${catId}`);
+            const messageInput = document.getElementById(`feedback-message-${catId}`);
+
+             if (!statusEl) {
+                showActionMessage('未找到反馈区域，请刷新页面后重试。', 'error');
+                return;
+            }
+
+            if (!ownerId) {
+                statusEl.textContent = '无法发送反馈：缺少上传者信息。';
+                statusEl.style.color = '#dc3545';
+                return;
+            }
+
+            const subject = (subjectInput?.value || '').trim() || `猫咪审核反馈 - #${catId}`;
+            const message = (messageInput?.value || '').trim();
+
+            if (!message) {
+                statusEl.textContent = '请先输入要发送的反馈内容。';
+                statusEl.style.color = '#dc3545';
+                return;
+            }
+
+            statusEl.textContent = '正在发送反馈，请稍候…';
+            statusEl.style.color = '#666';
+
+            fetch('/api/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    receiver_id: ownerId,
+                    subject,
+                    content: message
+                })
+            })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    statusEl.textContent = '反馈已成功发送给上传者。';
+                    statusEl.style.color = '#4CAF50';
+                    showActionMessage('反馈已发送给上传者。', 'success');
+                    if (messageInput) {
+                        messageInput.value = '';
+                    }
+                } else {
+                    throw new Error(data.error || '发送反馈失败，请稍后重试。');
+                }
+            })
+            .catch(error => {
+                statusEl.textContent = error.message;
+                statusEl.style.color = '#dc3545';
+                showActionMessage(error.message, 'error');
+            });
+        }
+
+        function resetFeedback(catId) {
+            const subjectInput = document.getElementById(`feedback-subject-${catId}`);
+            const messageInput = document.getElementById(`feedback-message-${catId}`);
+            const statusEl = document.getElementById(`feedback-status-${catId}`);
+
+            if (subjectInput) {
+                subjectInput.value = subjectInput.defaultValue || `猫咪审核反馈 - #${catId}`;
+            }
+            if (messageInput) {
+                messageInput.value = '';
+            }
+            if (statusEl) {
+                statusEl.textContent = '';
+                statusEl.style.color = '#666';
+            }
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         }
 
         function loadUsers() {
@@ -355,16 +1179,41 @@
                     
                     users.forEach(user => {
                         const row = tbody.insertRow();
+<<<<<<< HEAD
+=======
+                        const isVerified = user.is_verified !== undefined ? user.is_verified : false;
+                        const verifiedStatus = isVerified ? 
+                            '<span class="status-badge status-approved">已验证</span>' : 
+                            '<span class="status-badge status-pending">未验证</span>';
+                        const verifyButton = !user.is_admin ? 
+                            (isVerified ? 
+                                `<button class="btn btn-secondary" onclick="toggleUserVerification(${user.id}, false)">取消验证</button>` :
+                                `<button class="btn btn-primary" onclick="toggleUserVerification(${user.id}, true)">验证用户</button>`
+                            ) : '';
+                        const deleteButton = !user.is_admin ? 
+                            `<button class="btn btn-danger" onclick="deleteUser(${user.id})">删除</button>` :
+                            '';
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
                         row.innerHTML = `
                             <td>${user.id}</td>
                             <td>${user.name}</td>
                             <td>${user.email}</td>
                             <td>${user.is_admin ? '管理员' : '普通用户'}</td>
+<<<<<<< HEAD
                             <td>${new Date(user.created_at).toLocaleDateString()}</td>
                             <td>
                                 <div class="action-buttons">
                                     ${user.is_admin ? '' : '<button class="btn btn-secondary">设为管理员</button>'}
                                     <button class="btn btn-danger">删除</button>
+=======
+                            <td>${verifiedStatus}</td>
+                            <td>${new Date(user.created_at).toLocaleDateString()}</td>
+                            <td>
+                                <div class="action-buttons">
+                                    ${verifyButton}
+                                    ${user.is_admin ? '' : '<button class="btn btn-secondary">设为管理员</button>'}
+                                    ${deleteButton}
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
                                 </div>
                             </td>
                         `;
@@ -420,6 +1269,7 @@
         }
 
         function approveCat(catId) {
+<<<<<<< HEAD
             if (confirm(`确定要批准这只猫咪 (ID: ${catId}) 吗？`)) {
                 fetch(`/api/cats/${catId}/approve`, {
                     method: 'POST'
@@ -457,6 +1307,101 @@
                     alert('拒绝失败，请重试');
                 });
             }
+=======
+            if (!confirm(`确定要批准这只猫咪 (ID: ${catId}) 吗？`)) {
+                return;
+            }
+
+            setCatActionButtonsLoading(catId, 'approve', true, '批准中…');
+
+            fetch(`/api/cats/${catId}/approve`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            })
+            .then(response => response.json().catch(() => ({})).then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    showActionMessage(`猫咪 #${catId} 已批准，可在前台展示。`, 'success');
+                    loadCats();
+                } else {
+                    throw new Error(data.error || '批准失败，请稍后重试。');
+                }
+            })
+            .catch(error => {
+                console.error('Error approving cat:', error);
+                showActionMessage(error.message || '批准失败，请稍后重试。', 'error');
+            })
+            .finally(() => {
+                setCatActionButtonsLoading(catId, 'approve', false);
+            });
+        }
+
+        function rejectCat(catId) {
+            if (!confirm(`确定要拒绝这只猫咪 (ID: ${catId}) 吗？`)) {
+                return;
+            }
+
+            setCatActionButtonsLoading(catId, 'reject', true, '拒绝中…');
+
+            fetch(`/api/cats/${catId}/reject`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            })
+            .then(response => response.json().catch(() => ({})).then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    showActionMessage(`已拒绝猫咪 #${catId} 的展示请求。`, 'info');
+                    loadCats();
+                } else {
+                    throw new Error(data.error || '拒绝失败，请稍后重试。');
+                }
+            })
+            .catch(error => {
+                console.error('Error rejecting cat:', error);
+                showActionMessage(error.message || '拒绝失败，请稍后重试。', 'error');
+            })
+            .finally(() => {
+                setCatActionButtonsLoading(catId, 'reject', false);
+            });
+        }
+
+        function restoreCat(catId) {
+            if (!confirm(`确定要将猫咪 (ID: ${catId}) 恢复为待审核状态吗？`)) {
+                return;
+            }
+
+            setCatActionButtonsLoading(catId, 'restore', true, '恢复中…');
+
+            fetch(`/api/cats/${catId}/restore`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            })
+            .then(response => response.json().catch(() => ({})).then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    showActionMessage(`猫咪 #${catId} 已恢复为待审核状态。`, 'info');
+                    loadCats();
+                } else {
+                    throw new Error(data.error || '恢复失败，请稍后重试。');
+                }
+            })
+            .catch(error => {
+                console.error('Error restoring cat:', error);
+                showActionMessage(error.message || '恢复失败，请稍后重试。', 'error');
+            })
+            .finally(() => {
+                setCatActionButtonsLoading(catId, 'restore', false);
+            });
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         }
 
         function logout() {
@@ -468,6 +1413,236 @@
             })
             .catch(error => console.error('Error:', error));
         }
+<<<<<<< HEAD
+=======
+
+        function loadResendApiKey() {
+            fetch('/api/admin/settings/resend-api-key')
+                .then(response => response.json())
+                .then(data => {
+                    const statusEl = document.getElementById('apiKeyStatus');
+                    if (data.is_configured) {
+                        statusEl.textContent = `API 密钥已配置 (${data.api_key})`;
+                        statusEl.style.color = '#4CAF50';
+                    } else {
+                        statusEl.textContent = 'API 密钥未配置';
+                        statusEl.style.color = '#dc3545';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading API key:', error);
+                    document.getElementById('apiKeyStatus').textContent = '加载配置失败';
+                });
+            
+            fetch('/api/admin/settings/resend-from-email')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('resendFromEmail').value = data.from_email || '';
+                    const statusEl = document.getElementById('fromEmailStatus');
+                    if (data.from_email) {
+                        statusEl.textContent = `当前发件人邮箱: ${data.from_email}`;
+                        statusEl.style.color = '#4CAF50';
+                    } else {
+                        statusEl.textContent = '使用默认发件人邮箱: noreply@resend.dev';
+                        statusEl.style.color = '#666';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading from email:', error);
+                });
+            
+            fetch('/api/admin/settings/base-url')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('siteBaseUrl').value = data.base_url || '';
+                    const statusEl = document.getElementById('baseUrlStatus');
+                    if (data.base_url) {
+                        statusEl.textContent = `当前网站 URL: ${data.base_url}`;
+                        statusEl.style.color = '#4CAF50';
+                    } else {
+                        statusEl.textContent = '尚未配置网站 URL，邮件中的链接将使用服务器默认地址。';
+                        statusEl.style.color = '#dc3545';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading base URL:', error);
+                });
+        }
+
+        function saveResendApiKey() {
+            const apiKey = document.getElementById('resendApiKey').value.trim();
+            if (!apiKey) {
+                alert('请输入 API 密钥');
+                return;
+            }
+
+            fetch('/api/admin/settings/resend-api-key', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ api_key: apiKey })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    alert('API 密钥保存成功！');
+                    document.getElementById('resendApiKey').value = '';
+                    loadResendApiKey();
+                } else {
+                    alert(data.error || '保存失败');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('保存失败，请重试');
+            });
+        }
+
+        function saveResendFromEmail() {
+            const fromEmail = document.getElementById('resendFromEmail').value.trim();
+            if (!fromEmail) {
+                alert('请输入发件人邮箱地址');
+                return;
+            }
+
+            fetch('/api/admin/settings/resend-from-email', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ from_email: fromEmail })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    alert('发件人邮箱地址保存成功！');
+                    loadResendApiKey();
+                } else {
+                    alert(data.error || '保存失败');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('保存失败，请重试');
+            });
+        }
+
+        function saveBaseUrl() {
+            const baseUrl = document.getElementById('siteBaseUrl').value.trim();
+            if (!baseUrl) {
+                alert('请输入网站 URL');
+                return;
+            }
+
+            fetch('/api/admin/settings/base-url', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ base_url: baseUrl })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    alert('网站 URL 保存成功！');
+                    loadResendApiKey();
+                } else {
+                    alert(data.error || '保存失败');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('保存失败，请重试');
+            });
+        }
+
+        function testResendApiKey() {
+            const apiKey = document.getElementById('resendApiKey').value.trim();
+            if (!apiKey) {
+                alert('请先输入 API 密钥');
+                return;
+            }
+
+            // Save first, then test
+            fetch('/api/admin/settings/resend-api-key', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ api_key: apiKey })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    alert('API 密钥已保存。测试功能需要实际发送邮件，请通过注册新用户来测试。');
+                    document.getElementById('resendApiKey').value = '';
+                    loadResendApiKey();
+                } else {
+                    alert(data.error || '保存失败');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('测试失败，请重试');
+            });
+        }
+
+        function toggleUserVerification(userId, isVerified) {
+            const action = isVerified ? '验证' : '取消验证';
+            if (!confirm(`确定要${action}此用户吗？`)) {
+                return;
+            }
+
+            fetch(`/api/users/${userId}/verify`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ is_verified: isVerified })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    alert(`${action}成功！`);
+                    loadUsers();
+                } else {
+                    alert(data.error || `${action}失败`);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert(`${action}失败，请重试`);
+            });
+        }
+        
+        function deleteUser(userId) {
+            if (!confirm('确定要删除此用户吗？该操作不可恢复。')) {
+                return;
+            }
+            
+            fetch(`/api/users/${userId}/delete`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    alert('用户已删除！');
+                    loadUsers();
+                } else {
+                    alert(data.error || '删除失败');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('删除失败，请重试');
+            });
+        }
+>>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
     </script>
 </body>
 </html>
