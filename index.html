@@ -52,6 +52,33 @@
                 </div>
             </div>
         </section>
+
+        <section id="recognition" class="recognition-section">
+            <div class="container">
+                <h2>猫脸识别</h2>
+                <p class="recognition-intro">拍摄或上传猫咪照片，我们会尝试匹配数据库中已记录的猫咪档案，帮助您快速了解它的身份信息。</p>
+                <div class="recognition-wrapper">
+                    <div class="recognition-controls">
+                        <video id="recognitionVideo" autoplay muted playsinline class="recognition-video"></video>
+                        <canvas id="recognitionCanvas" width="640" height="480" style="display:none;"></canvas>
+                        <div class="recognition-buttons">
+                            <button id="startCameraBtn" class="btn-primary">开启摄像头</button>
+                            <button id="capturePhotoBtn" class="btn-secondary">拍摄并识别</button>
+                        </div>
+                        <div class="recognition-divider">或</div>
+                        <label class="file-upload">
+                            <span>上传图片</span>
+                            <input type="file" id="recognitionFileInput" accept="image/*">
+                        </label>
+                        <button id="uploadRecognizeBtn" class="btn-primary">上传并识别</button>
+                        <div id="recognitionStatus" class="recognition-status"></div>
+                    </div>
+                    <div class="recognition-results" id="recognitionResults">
+                        <p class="recognition-placeholder">尚未进行识别。请拍照或上传图片后查看结果。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
     </main>
 
     <!-- 登录模态框 -->

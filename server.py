@@ -11,12 +11,22 @@ import urllib.parse
 from urllib.parse import unquote
 from http.cookies import SimpleCookie
 import cgi
-<<<<<<< HEAD
-=======
 import secrets
 import urllib.request
 import urllib.error
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
+import uuid
+from typing import Dict, List, Optional
+
+import numpy as np
+
+from backend.cat_recognition import (
+    CatFaceRecognizer,
+    aggregate_hashes,
+    blob_to_embedding,
+    embedding_to_blob,
+    hex_to_bits,
+    summarize_embeddings,
+)
 
 PORT = 40276
 HOST = "0.0.0.0"
@@ -28,69 +38,106 @@ class DatabaseManager:
         self.init_db()
     
     def init_db(self):
-        """Initialize the database with tables"""
+        """Initialize the database schema and default records."""
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
-        # Create cats table
-        cursor.execute('''
+
+        cursor.execute(
+            '''
             CREATE TABLE IF NOT EXISTS cats (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
-                age TEXT NOT NULL,
-                gender TEXT NOT NULL,
+                age TEXT,
+                gender TEXT,
                 description TEXT,
                 image_path TEXT,
                 owner_id INTEGER,
                 is_approved BOOLEAN DEFAULT 0,
+                is_rejected BOOLEAN DEFAULT 0,
                 is_adopted BOOLEAN DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                sterilized BOOLEAN DEFAULT 0,
+                special_notes TEXT,
+                unique_markings TEXT,
+                microchipped BOOLEAN DEFAULT 0,
+                last_known_location TEXT,
+                identification_code TEXT,
+                reference_hash_hex TEXT,
+                reference_hash_length INTEGER,
+                embedding_vector BLOB,
+                hash_version TEXT DEFAULT 'v1',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        ''')
-        
-<<<<<<< HEAD
-=======
-        # Add rejection column if it doesn't exist
-        try:
-            cursor.execute('ALTER TABLE cats ADD COLUMN is_rejected BOOLEAN DEFAULT 0')
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
-        # Create users table
-        cursor.execute('''
+        '''
+        )
+
+        # Ensure new columns exist for legacy databases
+        self._ensure_column(cursor, 'cats', 'is_rejected', 'BOOLEAN DEFAULT 0')
+        self._ensure_column(cursor, 'cats', 'sterilized', 'BOOLEAN DEFAULT 0')
+        self._ensure_column(cursor, 'cats', 'special_notes', 'TEXT')
+        self._ensure_column(cursor, 'cats', 'unique_markings', 'TEXT')
+        self._ensure_column(cursor, 'cats', 'microchipped', 'BOOLEAN DEFAULT 0')
+        self._ensure_column(cursor, 'cats', 'last_known_location', 'TEXT')
+        self._ensure_column(cursor, 'cats', 'identification_code', 'TEXT')
+        self._ensure_column(cursor, 'cats', 'reference_hash_hex', 'TEXT')
+        self._ensure_column(cursor, 'cats', 'reference_hash_length', 'INTEGER')
+        self._ensure_column(cursor, 'cats', 'embedding_vector', 'BLOB')
+        self._ensure_column(cursor, 'cats', 'hash_version', "TEXT DEFAULT 'v1'")
+        self._ensure_column(cursor, 'cats', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
+
+        cursor.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS cat_reference_images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cat_id INTEGER NOT NULL,
+                image_path TEXT NOT NULL,
+                hash_hex TEXT NOT NULL,
+                hash_length INTEGER NOT NULL,
+                embedding_vector BLOB,
+                is_primary BOOLEAN DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (cat_id) REFERENCES cats(id) ON DELETE CASCADE
+            )
+        '''
+        )
+
+        cursor.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS cat_recognition_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cat_id INTEGER,
+                matched BOOLEAN,
+                match_score REAL,
+                hash_distance INTEGER,
+                request_metadata TEXT,
+                image_path TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (cat_id) REFERENCES cats(id)
+            )
+        '''
+        )
+
+        cursor.execute(
+            '''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 is_admin BOOLEAN DEFAULT 0,
-<<<<<<< HEAD
-=======
                 is_verified BOOLEAN DEFAULT 0,
                 verification_token TEXT,
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        ''')
-        
-<<<<<<< HEAD
-=======
-        # Add verification columns if they don't exist (for existing databases)
-        try:
-            cursor.execute('ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT 0')
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute('ALTER TABLE users ADD COLUMN verification_token TEXT')
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
-        # Create adoption_requests table
-        cursor.execute('''
+        '''
+        )
+
+        self._ensure_column(cursor, 'users', 'is_verified', 'BOOLEAN DEFAULT 0')
+        self._ensure_column(cursor, 'users', 'verification_token', 'TEXT')
+
+        cursor.execute(
+            '''
             CREATE TABLE IF NOT EXISTS adoption_requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 cat_id INTEGER,
@@ -100,10 +147,11 @@ class DatabaseManager:
                 FOREIGN KEY (cat_id) REFERENCES cats (id),
                 FOREIGN KEY (user_id) REFERENCES users (id)
             )
-        ''')
-        
-        # Create messages table for user communication
-        cursor.execute('''
+        '''
+        )
+
+        cursor.execute(
+            '''
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sender_id INTEGER,
@@ -115,62 +163,100 @@ class DatabaseManager:
                 FOREIGN KEY (sender_id) REFERENCES users (id),
                 FOREIGN KEY (receiver_id) REFERENCES users (id)
             )
-        ''')
-        
-        # Create content table for editable text
-        cursor.execute('''
+        '''
+        )
+
+        cursor.execute(
+            '''
             CREATE TABLE IF NOT EXISTS content (
                 id TEXT PRIMARY KEY,
                 title TEXT,
                 content TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        ''')
-        
-<<<<<<< HEAD
-=======
-        # Create settings table for system configuration
-        cursor.execute('''
+        '''
+        )
+
+        cursor.execute(
+            '''
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        ''')
-        
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
-        # Insert default content if not exists
-        cursor.execute("SELECT COUNT(*) FROM content WHERE id = 'home_intro'")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute('''
-                INSERT INTO content (id, title, content) 
-                VALUES ('home_intro', '欢迎来到流浪猫公益项目', '我们致力于救助和照顾流浪猫，为它们寻找温暖的家。通过我们的平台，您可以了解待领养的猫咪信息，也可以申请成为志愿者或爱心家庭。')
-            ''')
-        
-        cursor.execute("SELECT COUNT(*) FROM content WHERE id = 'about_mission'")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute('''
-                INSERT INTO content (id, title, content) 
-                VALUES ('about_mission', '我们的使命', '流浪猫公益项目成立于2020年，由一群热爱动物的志愿者发起。我们致力于救助城市中的流浪猫，为它们提供医疗护理、食物和庇护所，并努力为它们寻找永久的爱心家庭。')
-            ''')
-        
-        # Check if admin user exists, if not create one
-        cursor.execute("SELECT COUNT(*) FROM users WHERE is_admin = 1")
-        if cursor.fetchone()[0] == 0:
-            # Create default admin user (admin@cats.com / password: admin123)
-            password_hash = hashlib.sha256("admin123".encode()).hexdigest()
-            cursor.execute('''
-<<<<<<< HEAD
-                INSERT INTO users (name, email, password_hash, is_admin)
-                VALUES (?, ?, ?, 1)
-=======
-                INSERT INTO users (name, email, password_hash, is_admin, is_verified)
-                VALUES (?, ?, ?, 1, 1)
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
-            ''', ("Admin User", "admin@cats.com", password_hash))
-        
+        '''
+        )
+
+        self._initialize_content_defaults(cursor)
+        self._initialize_admin_user(cursor)
+        self._initialize_default_settings(cursor)
+
         conn.commit()
         conn.close()
+
+    def _ensure_column(self, cursor, table: str, column: str, definition: str) -> None:
+        try:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError:
+            pass
+
+    def _initialize_content_defaults(self, cursor) -> None:
+        cursor.execute("SELECT COUNT(*) FROM content WHERE id = 'home_intro'")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                '''
+                INSERT INTO content (id, title, content)
+                VALUES (
+                    'home_intro',
+                    '欢迎来到流浪猫公益项目',
+                    '我们致力于救助和照顾流浪猫，为它们寻找温暖的家。通过我们的平台，您可以了解待领养的猫咪信息，也可以申请成为志愿者或爱心家庭。'
+                )
+            '''
+            )
+
+        cursor.execute("SELECT COUNT(*) FROM content WHERE id = 'about_mission'")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                '''
+                INSERT INTO content (id, title, content)
+                VALUES (
+                    'about_mission',
+                    '我们的使命',
+                    '流浪猫公益项目成立于2020年，由一群热爱动物的志愿者发起。我们致力于救助城市中的流浪猫，为它们提供医疗护理、食物和庇护所，并努力为它们寻找永久的爱心家庭。'
+                )
+            '''
+            )
+
+    def _initialize_admin_user(self, cursor) -> None:
+        cursor.execute("SELECT COUNT(*) FROM users WHERE is_admin = 1")
+        if cursor.fetchone()[0] == 0:
+            password_hash = hashlib.sha256("admin123".encode()).hexdigest()
+            cursor.execute(
+                '''
+                INSERT INTO users (name, email, password_hash, is_admin, is_verified)
+                VALUES (?, ?, ?, 1, 1)
+            ''',
+                ("Admin User", "admin@cats.com", password_hash),
+            )
+
+    def _initialize_default_settings(self, cursor) -> None:
+        defaults = {
+            'cat_recognition.threshold': '0.78',
+            'cat_recognition.max_results': '3',
+            'cat_recognition.max_hamming': '120',
+            'cat_recognition.model_path': '',
+            'cat_recognition.hash_length_override': '',
+        }
+        for key, value in defaults.items():
+            cursor.execute('SELECT 1 FROM settings WHERE key = ?', (key,))
+            if cursor.fetchone() is None:
+                cursor.execute(
+                    '''
+                    INSERT INTO settings (key, value)
+                    VALUES (?, ?)
+                ''',
+                    (key, value),
+                )
     
     def get_all_cats(self):
         """Get all approved cats from database"""
@@ -196,13 +282,6 @@ class DatabaseManager:
         return cat_id
     
     def get_all_cats_admin(self):
-<<<<<<< HEAD
-        """Get all cats (including pending) for admin view"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM cats ORDER BY created_at DESC")
-=======
         """Get all cats (including pending) for admin view with owner info"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -216,31 +295,19 @@ class DatabaseManager:
             LEFT JOIN users u ON c.owner_id = u.id
             ORDER BY c.created_at DESC
         ''')
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         cats = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return cats
     
-<<<<<<< HEAD
-    def update_cat_approval(self, cat_id, is_approved):
-        """Update cat approval status"""
-=======
     def update_cat_approval(self, cat_id, is_approved, is_rejected=0):
         """Update cat approval/rejection status"""
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE cats 
-<<<<<<< HEAD
-            SET is_approved = ?
-            WHERE id = ?
-        ''', (is_approved, cat_id))
-=======
             SET is_approved = ?, is_rejected = ?
             WHERE id = ?
         ''', (is_approved, is_rejected, cat_id))
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         conn.commit()
         conn.close()
     
@@ -254,25 +321,6 @@ class DatabaseManager:
         conn.close()
         return dict(user) if user else None
     
-<<<<<<< HEAD
-    def create_user(self, name, email, password):
-        """Create a new user"""
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                INSERT INTO users (name, email, password_hash)
-                VALUES (?, ?, ?)
-            ''', (name, email, password_hash))
-            user_id = cursor.lastrowid
-            conn.commit()
-            result = user_id
-        except sqlite3.IntegrityError:
-            result = None
-        conn.close()
-        return result
-=======
     def get_user_by_id(self, user_id):
         """Get user by ID"""
         conn = sqlite3.connect(self.db_path)
@@ -282,18 +330,13 @@ class DatabaseManager:
         user = cursor.fetchone()
         conn.close()
         return dict(user) if user else None
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
     
     def get_all_users(self):
         """Get all users (for admin)"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-<<<<<<< HEAD
-        cursor.execute("SELECT id, name, email, is_admin, created_at FROM users ORDER BY created_at DESC")
-=======
         cursor.execute("SELECT id, name, email, is_admin, is_verified, created_at FROM users ORDER BY created_at DESC")
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         users = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return users
@@ -420,8 +463,6 @@ class DatabaseManager:
         ''', (content_id, title, content_text))
         conn.commit()
         conn.close()
-<<<<<<< HEAD
-=======
     
     def get_setting(self, key):
         """Get a setting value by key"""
@@ -518,13 +559,355 @@ class DatabaseManager:
         user = cursor.fetchone()
         conn.close()
         return dict(user) if user else None
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
+
+    # --- Cat recognition helpers -------------------------------------------------
+
+    def get_cat_by_id(self, cat_id: int) -> Optional[Dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM cats WHERE id = ?", (cat_id,))
+        result = cursor.fetchone()
+        conn.close()
+        return dict(result) if result else None
+
+    def update_cat_profile(self, cat_id: int, payload: Dict) -> bool:
+        if not payload:
+            return False
+        columns = []
+        values = []
+        for key, value in payload.items():
+            columns.append(f"{key} = ?")
+            values.append(value)
+        values.append(cat_id)
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            UPDATE cats
+            SET {', '.join(columns)}, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """,
+            values,
+        )
+        conn.commit()
+        updated = cursor.rowcount > 0
+        conn.close()
+        return updated
+
+    def add_cat_reference_image(
+        self,
+        cat_id: int,
+        image_path: str,
+        hash_hex: str,
+        hash_length: int,
+        embedding_bytes: bytes,
+        is_primary: bool = False,
+    ) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            INSERT INTO cat_reference_images (
+                cat_id,
+                image_path,
+                hash_hex,
+                hash_length,
+                embedding_vector,
+                is_primary
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''',
+            (
+                cat_id,
+                image_path,
+                hash_hex,
+                hash_length,
+                sqlite3.Binary(embedding_bytes),
+                1 if is_primary else 0,
+            ),
+        )
+        reference_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return reference_id
+
+    def get_cat_reference_images(self, cat_id: int, include_embedding: bool = False) -> List[Dict]:
+        columns = [
+            "id",
+            "cat_id",
+            "image_path",
+            "hash_hex",
+            "hash_length",
+            "is_primary",
+            "created_at",
+        ]
+        if include_embedding:
+            columns.append("embedding_vector")
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            f'''
+            SELECT {', '.join(columns)}
+            FROM cat_reference_images
+            WHERE cat_id = ?
+            ORDER BY created_at DESC
+        ''',
+            (cat_id,),
+        )
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
+
+    def refresh_cat_signature(self, cat_id: int, aggregated_hash_hex: Optional[str], hash_length: Optional[int], embedding_bytes: Optional[bytes]) -> None:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            UPDATE cats
+            SET reference_hash_hex = ?,
+                reference_hash_length = ?,
+                embedding_vector = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''',
+            (
+                aggregated_hash_hex,
+                hash_length,
+                sqlite3.Binary(embedding_bytes) if embedding_bytes else None,
+                cat_id,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+    def count_reference_images(self, cat_id: int) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM cat_reference_images WHERE cat_id = ?', (cat_id,))
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
+
+    def list_reference_vectors(self) -> List[Dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT
+                cri.id AS reference_id,
+                cri.cat_id,
+                cri.hash_hex,
+                cri.hash_length,
+                cri.embedding_vector,
+                cri.is_primary,
+                c.name AS cat_name,
+                c.is_approved,
+                c.is_rejected
+            FROM cat_reference_images cri
+            JOIN cats c ON c.id = cri.cat_id
+        '''
+        )
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
+
+    def list_reference_images(self, limit: Optional[int] = None) -> List[Dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        query = '''
+            SELECT
+                cri.id,
+                cri.cat_id,
+                c.name AS cat_name,
+                cri.image_path,
+                cri.hash_hex,
+                cri.hash_length,
+                LENGTH(cri.embedding_vector) AS embedding_bytes,
+                cri.is_primary,
+                cri.created_at
+            FROM cat_reference_images cri
+            LEFT JOIN cats c ON c.id = cri.cat_id
+            ORDER BY cri.created_at DESC
+        '''
+        if limit:
+            cursor.execute(f"{query} LIMIT ?", (limit,))
+        else:
+            cursor.execute(query)
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
+
+    def list_recognition_events(self, limit: Optional[int] = None) -> List[Dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        query = '''
+            SELECT
+                cre.id,
+                cre.cat_id,
+                c.name AS cat_name,
+                cre.matched,
+                cre.match_score,
+                cre.hash_distance,
+                cre.request_metadata,
+                cre.image_path,
+                cre.created_at
+            FROM cat_recognition_events cre
+            LEFT JOIN cats c ON c.id = cre.cat_id
+            ORDER BY cre.created_at DESC
+        '''
+        if limit:
+            cursor.execute(f"{query} LIMIT ?", (limit,))
+        else:
+            cursor.execute(query)
+        events = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return events
+
+    def record_recognition_event(
+        self,
+        *,
+        cat_id: Optional[int],
+        matched: bool,
+        match_score: float,
+        hash_distance: Optional[int],
+        metadata: Dict,
+        image_path: Optional[str],
+    ) -> None:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            INSERT INTO cat_recognition_events (
+                cat_id,
+                matched,
+                match_score,
+                hash_distance,
+                request_metadata,
+                image_path
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''',
+            (
+                cat_id,
+                1 if matched else 0,
+                match_score,
+                hash_distance,
+                json.dumps(metadata, ensure_ascii=False),
+                image_path,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
 
 # Initialize database
 db = DatabaseManager(DB_PATH)
 
-<<<<<<< HEAD
-=======
+def create_cat_recognizer_from_settings() -> CatFaceRecognizer:
+    hash_override_setting = db.get_setting('cat_recognition.hash_length_override')
+    hash_override = None
+    if hash_override_setting:
+        try:
+            hash_override = int(hash_override_setting)
+        except ValueError:
+            hash_override = None
+
+    recognizer = CatFaceRecognizer(hash_length=hash_override)
+
+    model_path_setting = db.get_setting('cat_recognition.model_path')
+    if model_path_setting:
+        try:
+            recognizer.set_model_weights(model_path_setting)
+        except FileNotFoundError:
+            print(f"[CatRecognition] Model not found at {model_path_setting}. Using default ImageNet weights.")
+        except RuntimeError as exc:
+            print(f"[CatRecognition] Failed to load model weights: {exc}.")
+    return recognizer
+
+cat_recognizer = create_cat_recognizer_from_settings()
+
+def recompute_cat_signature(cat_id: int) -> None:
+    references = db.get_cat_reference_images(cat_id, include_embedding=True)
+    if not references:
+        db.refresh_cat_signature(cat_id, None, None, None)
+        return
+
+    embeddings = []
+    hash_bitsets = []
+    for reference in references:
+        embedding_blob = reference.get('embedding_vector')
+        if embedding_blob:
+            embeddings.append(blob_to_embedding(embedding_blob))
+        hash_hex = reference.get('hash_hex')
+        hash_length = reference.get('hash_length')
+        if hash_hex:
+            hash_bitsets.append(hex_to_bits(hash_hex, hash_length))
+
+    aggregated_embedding = summarize_embeddings([vec for vec in embeddings if vec.size])
+    aggregated_hash_hex = aggregate_hashes(hash_bitsets)
+
+    embedding_bytes = embedding_to_blob(aggregated_embedding) if aggregated_embedding is not None else None
+    aggregated_hash_length = None
+    if aggregated_hash_hex:
+        aggregated_hash_length = hex_to_bits(aggregated_hash_hex).size
+
+    db.refresh_cat_signature(cat_id, aggregated_hash_hex, aggregated_hash_length, embedding_bytes)
+
+
+def get_recognition_settings() -> Dict:
+    try:
+        threshold = float(db.get_setting('cat_recognition.threshold') or 0.78)
+    except ValueError:
+        threshold = 0.78
+
+    try:
+        max_results = int(db.get_setting('cat_recognition.max_results') or 3)
+    except ValueError:
+        max_results = 3
+
+    max_hamming_setting = db.get_setting('cat_recognition.max_hamming')
+    try:
+        max_hamming = int(max_hamming_setting) if max_hamming_setting else None
+    except ValueError:
+        max_hamming = None
+
+    return {
+        "threshold": threshold,
+        "max_results": max_results,
+        "max_hamming": max_hamming,
+        "model_path": db.get_setting('cat_recognition.model_path') or "",
+        "hash_length_override": db.get_setting('cat_recognition.hash_length_override') or "",
+    }
+
+
+def save_uploaded_file(directory: str, original_filename: str, data: bytes) -> str:
+    os.makedirs(directory, exist_ok=True)
+    _, ext = os.path.splitext(original_filename or '')
+    unique_name = f"{int(time.time() * 1000)}_{uuid.uuid4().hex}{ext}"
+    file_path = os.path.join(directory, unique_name)
+    with open(file_path, 'wb') as handle:
+        handle.write(data)
+    return file_path
+
+
+def sanitize_cat_record(cat: Optional[Dict]) -> Optional[Dict]:
+    if not cat:
+        return None
+    sanitized = dict(cat)
+    sanitized.pop('embedding_vector', None)
+    for key in ('sterilized', 'microchipped', 'is_adopted', 'is_approved', 'is_rejected'):
+        if key in sanitized and sanitized[key] is not None:
+            sanitized[key] = bool(sanitized[key])
+    return sanitized
+
+
 def send_verification_email(email, name, token):
     """Send verification email via Resend API"""
     api_key = db.get_setting('resend_api_key')
@@ -593,7 +976,6 @@ def send_verification_email(email, name, token):
         print(f"Error sending email: {str(e)}")
         return False
 
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
 class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         # 添加CORS头部
@@ -637,22 +1019,25 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_register()
         elif self.path == '/api/cats':
             self.handle_add_cat()
+        elif self.path == '/api/admin/cat-profiles':
+            self.handle_admin_create_cat_profile()
+        elif self.path.startswith('/api/admin/cat-profiles/') and self.path.endswith('/reference-images'):
+            path_parts = [part for part in self.path.split('/') if part]
+            try:
+                cat_id = int(path_parts[3])
+                self.handle_upload_cat_reference_images(cat_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid cat ID"}).encode())
+        elif self.path == '/api/cats/recognize':
+            self.handle_recognize_cat()
+        elif self.path == '/api/admin/cat-recognition/settings':
+            self.handle_update_recognition_settings()
         elif self.path == '/api/logout':
             self.handle_logout()
         elif self.path.startswith('/api/cats/'):
             # Handle cat approval/rejection
-<<<<<<< HEAD
-            path_parts = self.path.split('/')
-            if len(path_parts) == 4 and path_parts[3] == 'approve':
-                cat_id = int(path_parts[2])
-                self.handle_approve_cat(cat_id)
-            elif len(path_parts) == 4 and path_parts[3] == 'reject':
-                cat_id = int(path_parts[2])
-                self.handle_reject_cat(cat_id)
-            else:
-                self.send_response(404)
-                self.end_headers()
-=======
             path_parts = [part for part in self.path.split('/') if part]
             try:
                 if len(path_parts) == 4 and path_parts[0] == 'api' and path_parts[1] == 'cats':
@@ -671,15 +1056,12 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
             self.send_response(404)
             self.end_headers()
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         elif self.path == '/api/messages':
             self.handle_send_message()
         elif self.path.startswith('/api/content/'):
             # Handle content update
             content_id = self.path.split('/')[-1]
             self.handle_update_content(content_id)
-<<<<<<< HEAD
-=======
         elif self.path == '/api/verify-email':
             self.handle_verify_email_post()
         elif self.path == '/api/admin/settings/resend-api-key':
@@ -709,7 +1091,6 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(400)
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": "Invalid user ID"}).encode())
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         else:
             self.send_response(404)
             self.end_headers()
@@ -738,23 +1119,34 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 # Get specific content by ID
                 content_id = self.path.split('/')[-1]
                 self.handle_get_content(content_id)
-<<<<<<< HEAD
-            else:
-                self.send_response(404)
-                self.end_headers()
-=======
+            elif self.path == '/api/admin/cat-profiles':
+                self.handle_get_cat_profiles_admin()
+            elif self.path.startswith('/api/admin/cat-profiles/'):
+                path_parts = [part for part in self.path.split('/') if part]
+                try:
+                    cat_id = int(path_parts[3])
+                    self.handle_get_cat_profile_admin(cat_id)
+                except (ValueError, IndexError):
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Invalid cat ID"}).encode())
             elif self.path == '/api/admin/settings/resend-api-key':
                 self.handle_get_resend_api_key()
             elif self.path == '/api/admin/settings/resend-from-email':
                 self.handle_get_resend_from_email()
             elif self.path == '/api/admin/settings/base-url':
                 self.handle_get_base_url()
+            elif self.path == '/api/cat-recognition/settings':
+                self.handle_get_recognition_settings()
+            elif self.path == '/api/admin/cat-references':
+                self.handle_get_reference_images()
+            elif self.path == '/api/admin/cat-recognition/events':
+                self.handle_get_recognition_events()
             else:
                 self.send_response(404)
                 self.end_headers()
         elif self.path.startswith('/verify-email'):
             self.handle_verify_email_get()
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         elif self.path.startswith('/uploads/'):
             # Serve uploaded files
             try:
@@ -843,12 +1235,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "id": user['id'],
                 "name": user['name'],
                 "email": user['email'],
-<<<<<<< HEAD
-                "is_admin": bool(user['is_admin'])
-=======
                 "is_admin": bool(user['is_admin']),
                 "is_verified": bool(user.get('is_verified', False))
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
             }
             self.wfile.write(json.dumps(response).encode())
         else:
@@ -887,13 +1275,6 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
         
         # Create user
-<<<<<<< HEAD
-        user_id = db.create_user(name, email, password)
-        if user_id:
-            self.send_response(201)
-            self.end_headers()
-            self.wfile.write(json.dumps({"message": "User created successfully"}).encode())
-=======
         result = db.create_user(name, email, password)
         if result:
             user_id, verification_token = result
@@ -913,7 +1294,6 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     "message": "User created successfully, but verification email could not be sent. Please contact support.",
                     "email_sent": False
                 }).encode())
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         else:
             self.send_response(400)
             self.end_headers()
@@ -939,11 +1319,7 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
         
         # Update cat approval status
-<<<<<<< HEAD
-        db.update_cat_approval(cat_id, 1)
-=======
         db.update_cat_approval(cat_id, 1, 0)
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
@@ -961,18 +1337,12 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
         
         # Update cat approval status
-<<<<<<< HEAD
-        db.update_cat_approval(cat_id, 0)
-=======
         db.update_cat_approval(cat_id, 0, 1)
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps({"message": "Cat rejected successfully"}).encode())
-<<<<<<< HEAD
-=======
 
     def handle_restore_cat(self, cat_id):
         """Handle restoring a cat submission back to pending"""
@@ -989,12 +1359,12 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps({"message": "Cat restored to pending review"}).encode())
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
     
     def handle_get_cats(self):
         """Handle getting all approved cats"""
         try:
             cats = db.get_all_cats()
+            cats = [sanitize_cat_record(cat) for cat in cats]
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
@@ -1016,6 +1386,17 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         
         try:
             cats = db.get_all_cats_admin()
+            for cat in cats:
+                cat_id = cat.get('id')
+                sanitized = sanitize_cat_record(cat)
+                if sanitized is None:
+                    continue
+                if cat_id is not None:
+                    sanitized['reference_count'] = db.count_reference_images(cat_id)
+                sanitized['owner_name'] = cat.get('owner_name')
+                sanitized['owner_email'] = cat.get('owner_email')
+                cat.clear()
+                cat.update(sanitized)
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
@@ -1035,8 +1416,6 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": "Authentication required"}).encode())
             return
         
-<<<<<<< HEAD
-=======
         # Require verified email for uploading cats
         if not user.get('is_verified', False) and not user.get('is_admin', False):
             self.send_response(403)
@@ -1044,7 +1423,6 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": "Email not verified. Please verify your email to upload cats."}).encode())
             return
         
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         # Parse form data (including files)
         form = cgi.FieldStorage(
             fp=self.rfile,
@@ -1092,6 +1470,572 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps({"id": cat_id, "message": "Cat added successfully, pending admin approval"}).encode())
     
+    def handle_admin_create_cat_profile(self):
+        """Create a new cat profile from the admin console."""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+        except (TypeError, ValueError):
+            content_length = 0
+
+        if content_length <= 0:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Empty request body"}).encode())
+            return
+
+        body = self.rfile.read(content_length)
+        try:
+            data = json.loads(body.decode('utf-8'))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        name = (data.get('name') or '').strip()
+        gender = (data.get('gender') or '').strip()
+        age = (data.get('age') or '').strip()
+        description = (data.get('description') or '').strip()
+
+        if not name or not gender:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Name and gender are required"}).encode())
+            return
+
+        cat_id = db.add_cat(name, age, gender, description, None, user['id'])
+        db.update_cat_approval(cat_id, 1, 0)
+
+        profile_updates = {
+            'sterilized': 1 if data.get('sterilized') else 0,
+            'microchipped': 1 if data.get('microchipped') else 0,
+            'special_notes': data.get('special_notes') or data.get('specialNotes') or '',
+            'unique_markings': data.get('unique_markings') or data.get('uniqueMarkings') or '',
+            'last_known_location': data.get('last_known_location') or data.get('lastKnownLocation') or '',
+            'identification_code': data.get('identification_code') or data.get('identificationCode') or '',
+        }
+        sanitized_updates = {key: value for key, value in profile_updates.items() if value is not None}
+        if sanitized_updates:
+            db.update_cat_profile(cat_id, sanitized_updates)
+
+        cat_profile = sanitize_cat_record(db.get_cat_by_id(cat_id)) or {}
+        cat_profile['reference_count'] = 0
+
+        self.send_response(201)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"message": "Cat profile created", "cat": cat_profile}).encode())
+
+    def handle_upload_cat_reference_images(self, cat_id: int):
+        """Upload reference images for a cat and compute embeddings/hashes."""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        cat = db.get_cat_by_id(cat_id)
+        if not cat:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Cat not found"}).encode())
+            return
+
+        form = cgi.FieldStorage(
+            fp=self.rfile,
+            headers=self.headers,
+            environ={'REQUEST_METHOD': 'POST', 'CONTENT_TYPE': self.headers.get('Content-Type')}
+        )
+
+        if 'images' not in form:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "No images provided"}).encode())
+            return
+
+        file_items = form['images']
+        if not isinstance(file_items, list):
+            file_items = [file_items]
+
+        if not file_items:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "No images provided"}).encode())
+            return
+
+        primary_index = -1
+        primary_field = form.getvalue('primary_index')
+        if primary_field is not None:
+            try:
+                primary_index = int(primary_field)
+            except ValueError:
+                primary_index = -1
+        elif str(form.getvalue('set_primary', 'false')).lower() == 'true':
+            primary_index = 0
+
+        saved_references = []
+
+        for index, file_item in enumerate(file_items):
+            filename = getattr(file_item, 'filename', '')
+            if not filename:
+                continue
+            file_bytes = file_item.file.read()
+            if not file_bytes:
+                continue
+
+            try:
+                embedding, hash_hex, hash_bits = cat_recognizer.compute_signature(file_bytes)
+            except Exception as exc:  # pragma: no cover
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Failed to process image: {exc}"}).encode())
+                return
+
+            hash_length = int(hash_bits.size)
+            storage_dir = os.path.join('uploads', 'cat_references', str(cat_id))
+            stored_path = save_uploaded_file(storage_dir, filename, file_bytes)
+
+            is_primary = index == primary_index and primary_index >= 0
+            reference_id = db.add_cat_reference_image(
+                cat_id=cat_id,
+                image_path=stored_path,
+                hash_hex=hash_hex,
+                hash_length=hash_length,
+                embedding_bytes=embedding_to_blob(embedding),
+                is_primary=is_primary,
+            )
+
+            if is_primary:
+                db.update_cat_profile(cat_id, {"image_path": stored_path})
+
+            saved_references.append({
+                "id": reference_id,
+                "image_path": stored_path,
+                "hash_length": hash_length,
+                "is_primary": is_primary,
+            })
+
+        recompute_cat_signature(cat_id)
+        references = db.get_cat_reference_images(cat_id)
+
+        self.send_response(201)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({
+            "message": "Reference images uploaded",
+            "references": references,
+            "saved": saved_references
+        }).encode())
+
+    def handle_get_cat_profiles_admin(self):
+        """Return detailed cat profiles for the admin console."""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            cats = db.get_all_cats_admin()
+            for cat in cats:
+                cat_id = cat.get('id')
+                sanitized = sanitize_cat_record(cat) or {}
+                references = db.get_cat_reference_images(cat_id)
+                sanitized['reference_images'] = references
+                sanitized['reference_count'] = len(references)
+                sanitized['owner_name'] = cat.get('owner_name')
+                sanitized['owner_email'] = cat.get('owner_email')
+                sanitized['hash_available'] = bool(cat.get('reference_hash_hex'))
+                cat.clear()
+                cat.update(sanitized)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(cats).encode())
+        except Exception as exc:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(exc)}).encode())
+
+    def handle_get_cat_profile_admin(self, cat_id: int):
+        """Return a single cat profile with reference images."""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        cat = db.get_cat_by_id(cat_id)
+        if not cat:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Cat not found"}).encode())
+            return
+
+        references = db.get_cat_reference_images(cat_id)
+        sanitized = sanitize_cat_record(cat) or {}
+        sanitized['reference_images'] = references
+        sanitized['reference_count'] = len(references)
+        sanitized['owner_name'] = cat.get('owner_name')
+        sanitized['owner_email'] = cat.get('owner_email')
+        sanitized['hash_available'] = bool(cat.get('reference_hash_hex'))
+
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(sanitized).encode())
+
+    def handle_get_recognition_settings(self):
+        """Return current recognition settings and simple stats."""
+        user = self.get_current_user()
+        if not user:
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Authentication required"}).encode())
+            return
+
+        settings = get_recognition_settings()
+        reference_records = db.list_reference_vectors()
+        approved_reference_records = [
+            record for record in reference_records
+            if record.get('is_approved') and not record.get('is_rejected')
+        ]
+        cat_ids = {record['cat_id'] for record in approved_reference_records}
+        settings.update({
+            "reference_count": len(approved_reference_records),
+            "cat_count": len(cat_ids),
+            "device": str(cat_recognizer.device),
+        })
+
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(settings).encode())
+
+    def handle_update_recognition_settings(self):
+        """Update recognition parameters (admin only)."""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+        except (TypeError, ValueError):
+            content_length = 0
+        payload = self.rfile.read(content_length) if content_length else b''
+        try:
+            data = json.loads(payload.decode('utf-8') or '{}')
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        updates = {}
+        errors = []
+
+        if 'threshold' in data:
+            try:
+                threshold = float(data['threshold'])
+                if not 0.0 < threshold < 1.0:
+                    raise ValueError
+                updates['cat_recognition.threshold'] = str(threshold)
+            except (TypeError, ValueError):
+                errors.append("threshold must be a float between 0 and 1")
+
+        if 'max_results' in data:
+            try:
+                max_results = int(data['max_results'])
+                if max_results <= 0:
+                    raise ValueError
+                updates['cat_recognition.max_results'] = str(max_results)
+            except (TypeError, ValueError):
+                errors.append("max_results must be a positive integer")
+
+        if 'max_hamming' in data:
+            value = data['max_hamming']
+            if value in (None, '', 'null'):
+                updates['cat_recognition.max_hamming'] = ''
+            else:
+                try:
+                    max_hamming = int(value)
+                    if max_hamming < 0:
+                        raise ValueError
+                    updates['cat_recognition.max_hamming'] = str(max_hamming)
+                except (TypeError, ValueError):
+                    errors.append("max_hamming must be a non-negative integer or blank")
+
+        reset_recognizer = False
+
+        if 'model_path' in data:
+            model_path = (data['model_path'] or '').strip()
+            updates['cat_recognition.model_path'] = model_path
+            reset_recognizer = True
+
+        if 'hash_length_override' in data:
+            hash_length_value = (data['hash_length_override'] or '').strip()
+            if hash_length_value == '':
+                updates['cat_recognition.hash_length_override'] = ''
+                reset_recognizer = True
+            else:
+                try:
+                    override_int = int(hash_length_value)
+                    if override_int <= 0:
+                        raise ValueError
+                    updates['cat_recognition.hash_length_override'] = str(override_int)
+                    reset_recognizer = True
+                except (TypeError, ValueError):
+                    errors.append("hash_length_override must be a positive integer or blank")
+
+        if errors:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"errors": errors}).encode())
+            return
+
+        for key, value in updates.items():
+            db.set_setting(key, value)
+
+        global cat_recognizer
+        if reset_recognizer:
+            cat_recognizer = create_cat_recognizer_from_settings()
+
+        settings = get_recognition_settings()
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"message": "Recognition settings updated", "settings": settings}).encode())
+
+    def handle_recognize_cat(self):
+        """Match an uploaded cat photo against known cats."""
+        user = self.get_current_user()
+        if not user:
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Authentication required"}).encode())
+            return
+
+        form = cgi.FieldStorage(
+            fp=self.rfile,
+            headers=self.headers,
+            environ={'REQUEST_METHOD': 'POST', 'CONTENT_TYPE': self.headers.get('Content-Type')}
+        )
+
+        if 'image' not in form:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Image file is required"}).encode())
+            return
+
+        file_item = form['image']
+        if isinstance(file_item, list) and file_item:
+            file_item = file_item[0]
+
+        filename = getattr(file_item, 'filename', '') if file_item is not None else ''
+        if not filename:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Image file is required"}).encode())
+            return
+
+        image_bytes = file_item.file.read()
+        if not image_bytes:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Uploaded image is empty"}).encode())
+            return
+
+        try:
+            embedding, hash_hex, hash_bits = cat_recognizer.compute_signature(image_bytes)
+        except Exception as exc:  # pragma: no cover
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": f"Failed to process image: {exc}"}).encode())
+            return
+
+        settings = get_recognition_settings()
+        reference_records = db.list_reference_vectors()
+        references = []
+        reference_lookup = {}
+        cat_ids = set()
+
+        for record in reference_records:
+            if not record.get('is_approved') or record.get('is_rejected'):
+                continue
+            hash_hex_ref = record.get('hash_hex')
+            hash_length = record.get('hash_length')
+            if not hash_hex_ref or not hash_length:
+                continue
+            ref_bits = hex_to_bits(hash_hex_ref, hash_length)
+            embedding_blob = record.get('embedding_vector')
+            ref_embedding = blob_to_embedding(embedding_blob) if embedding_blob else np.array([], dtype=np.float32)
+            references.append((record['cat_id'], record['reference_id'], ref_bits, ref_embedding))
+            reference_lookup[record['reference_id']] = record
+            cat_ids.add(record['cat_id'])
+
+        raw_matches = (
+            cat_recognizer.match_against(
+                query_hash=hash_bits,
+                query_embedding=embedding,
+                references=references,
+                max_results=settings['max_results'],
+                similarity_threshold=settings['threshold'],
+                max_hamming=settings['max_hamming'],
+            )
+            if references
+            else []
+        )
+
+        cat_cache = {}
+        results_payload = []
+        best_by_cat: Dict[str, Dict] = {}
+
+        for result in raw_matches:
+            cat_info = None
+            if result.cat_id is not None:
+                if result.cat_id not in cat_cache:
+                    cat_cache[result.cat_id] = sanitize_cat_record(db.get_cat_by_id(result.cat_id))
+                cat_info = cat_cache.get(result.cat_id)
+            reference_meta = reference_lookup.get(result.reference_image_id or -1)
+            payload_item = {
+                "cat": cat_info,
+                "similarity": result.similarity,
+                "hamming_distance": result.hamming_distance,
+                "matched": result.matched,
+                "reference_image_id": result.reference_image_id,
+                "reference_image_path": reference_meta.get('image_path') if reference_meta else None,
+            }
+            key = (
+                f"cat:{result.cat_id}"
+                if result.cat_id is not None
+                else f"ref:{result.reference_image_id}"
+            )
+            existing = best_by_cat.get(key)
+            if not existing or (
+                payload_item["similarity"] > existing["similarity"]
+                or (
+                    payload_item["similarity"] == existing["similarity"]
+                    and payload_item["hamming_distance"] < existing["hamming_distance"]
+                )
+            ):
+                best_by_cat[key] = payload_item
+
+        results_payload = sorted(
+            best_by_cat.values(),
+            key=lambda item: (-item["similarity"], item["hamming_distance"]),
+        )
+
+        confirmed_matches = [item for item in results_payload if item.get("matched")]
+        top_suggestions = [] if confirmed_matches else results_payload[:1]
+
+        save_query = str(form.getvalue('save_query', 'true')).lower() != 'false'
+        query_image_path = None
+        if save_query:
+            query_image_path = save_uploaded_file('uploads/cat_queries', file_item.filename, image_bytes)
+
+        top_match = next((match for match in raw_matches if match.matched), None)
+        db.record_recognition_event(
+            cat_id=top_match.cat_id if top_match else None,
+            matched=bool(top_match),
+            match_score=float(top_match.similarity) if top_match else 0.0,
+            hash_distance=int(top_match.hamming_distance) if top_match else None,
+            metadata={
+                "threshold": settings['threshold'],
+                "max_results": settings['max_results'],
+                "references_considered": len(references),
+                "matches_returned": len(raw_matches),
+            },
+            image_path=query_image_path,
+        )
+
+        response_payload = {
+            "matches": confirmed_matches,
+            "suggestions": top_suggestions,
+            "settings": settings,
+            "query_image_path": query_image_path,
+            "hash_hex": hash_hex,
+        }
+
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(response_payload).encode())
+
+    def handle_get_reference_images(self):
+        """Return cat reference image records."""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            limit_param = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('limit', [None])[0]
+            limit = int(limit_param) if limit_param else None
+        except ValueError:
+            limit = None
+
+        try:
+            references = db.list_reference_images(limit)
+            for ref in references:
+                ref['is_primary'] = bool(ref.get('is_primary'))
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(references).encode())
+        except Exception as exc:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(exc)}).encode())
+
+    def handle_get_recognition_events(self):
+        """Return recognition event logs for admin."""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            limit_param = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('limit', [None])[0]
+            limit = int(limit_param) if limit_param else 200
+        except ValueError:
+            limit = 200
+
+        try:
+            events = db.list_recognition_events(limit)
+            for event in events:
+                event['matched'] = bool(event.get('matched'))
+                metadata = event.get('request_metadata')
+                if isinstance(metadata, str):
+                    try:
+                        event['request_metadata'] = json.loads(metadata)
+                    except json.JSONDecodeError:
+                        pass
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(events).encode())
+        except Exception as exc:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(exc)}).encode())
+
     def handle_get_current_user(self):
         """Handle getting current user info"""
         user = self.get_current_user()
@@ -1103,7 +2047,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "id": user['id'],
                 "name": user['name'],
                 "email": user['email'],
-                "is_admin": bool(user['is_admin'])
+                "is_admin": bool(user['is_admin']),
+                "is_verified": bool(user.get('is_verified', False))
             }
             self.wfile.write(json.dumps(response).encode())
         else:
@@ -1307,8 +2252,6 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps({"message": "Logged out successfully"}).encode())
     
-<<<<<<< HEAD
-=======
     def handle_verify_email_get(self):
         """Handle GET request for email verification page"""
         query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -1624,7 +2567,6 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
     
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
     def guess_type(self, path):
         # 使用mimetypes模块猜测MIME类型
         mimetype, _ = mimetypes.guess_type(path)

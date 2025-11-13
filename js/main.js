@@ -12,7 +12,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // Fetch dynamic content
     fetchContent('home_intro', 'home-intro-title', 'home-intro-content');
     fetchContent('about_mission', 'about-mission-title', 'about-mission-content');
+
+    setupRecognition();
 });
+
+let recognitionStream = null;
+let recognitionVideo = null;
+let recognitionCanvas = null;
+let recognitionStatusEl = null;
+let recognitionResultsEl = null;
+let recognitionFileInput = null;
 
 function fetchContent(contentId, titleElementId, contentElementId) {
     fetch(`/api/content/${contentId}`)
@@ -228,7 +237,11 @@ const catData = [
         age: "2岁",
         gender: "雌性",
         description: "性格温顺，喜欢与人亲近",
-        image: "assets/cat1.jpg"
+        image: "assets/cat1.jpg",
+        sterilized: true,
+        unique_markings: "额头有心形花纹",
+        special_notes: "",
+        last_known_location: ""
     },
     {
         id: 2,
@@ -236,7 +249,11 @@ const catData = [
         age: "1.5岁",
         gender: "雄性",
         description: "活泼好动，好奇心强",
-        image: "assets/cat2.jpg"
+        image: "assets/cat2.jpg",
+        sterilized: false,
+        unique_markings: "",
+        special_notes: "",
+        last_known_location: ""
     },
     {
         id: 3,
@@ -244,7 +261,11 @@ const catData = [
         age: "3岁",
         gender: "雌性",
         description: "优雅安静，适合家庭饲养",
-        image: "assets/cat3.jpg"
+        image: "assets/cat3.jpg",
+        sterilized: true,
+        unique_markings: "",
+        special_notes: "",
+        last_known_location: ""
     },
     {
         id: 4,
@@ -252,7 +273,11 @@ const catData = [
         age: "1岁",
         gender: "雄性",
         description: "贪吃可爱，非常亲人",
-        image: "assets/cat4.jpg"
+        image: "assets/cat4.jpg",
+        sterilized: false,
+        unique_markings: "",
+        special_notes: "",
+        last_known_location: ""
     }
 ];
 
@@ -292,7 +317,11 @@ function fallbackToHardcodedData() {
             age: "2岁",
             gender: "雌性",
             description: "性格温顺，喜欢与人亲近",
-            image: "assets/cat1.jpg"
+            image: "assets/cat1.jpg",
+            sterilized: true,
+            unique_markings: "额头有心形花纹",
+            special_notes: "",
+            last_known_location: ""
         },
         {
             id: 2,
@@ -300,7 +329,11 @@ function fallbackToHardcodedData() {
             age: "1.5岁",
             gender: "雄性",
             description: "活泼好动，好奇心强",
-            image: "assets/cat2.jpg"
+            image: "assets/cat2.jpg",
+            sterilized: false,
+            unique_markings: "",
+            special_notes: "",
+            last_known_location: ""
         },
         {
             id: 3,
@@ -308,7 +341,11 @@ function fallbackToHardcodedData() {
             age: "3岁",
             gender: "雌性",
             description: "优雅安静，适合家庭饲养",
-            image: "assets/cat3.jpg"
+            image: "assets/cat3.jpg",
+            sterilized: true,
+            unique_markings: "",
+            special_notes: "",
+            last_known_location: ""
         },
         {
             id: 4,
@@ -316,7 +353,11 @@ function fallbackToHardcodedData() {
             age: "1岁",
             gender: "雄性",
             description: "贪吃可爱，非常亲人",
-            image: "assets/cat4.jpg"
+            image: "assets/cat4.jpg",
+            sterilized: false,
+            unique_markings: "",
+            special_notes: "",
+            last_known_location: ""
         }
     ];
     
@@ -347,7 +388,11 @@ function createCatCard(cat) {
             <h3>${cat.name}</h3>
             <p><strong>年龄:</strong> ${cat.age}</p>
             <p><strong>性别:</strong> ${cat.gender}</p>
-            <p>${cat.description}</p>
+            <p>${cat.description || '暂无描述'}</p>
+            <p><strong>绝育情况:</strong> ${cat.sterilized ? '已绝育' : '未绝育/未知'}</p>
+            <p><strong>显著特征:</strong> ${cat.unique_markings || '暂无'}</p>
+            <p><strong>特别说明:</strong> ${cat.special_notes || '暂无'}</p>
+            <p><strong>最近位置:</strong> ${cat.last_known_location || '暂无记录'}</p>
             <button class="adopt-btn" data-cat-id="${cat.id}">我要领养</button>
         </div>
     `;
@@ -388,4 +433,199 @@ function handleAdoptClick(catId) {
 function loadMoreCats() {
     console.log('加载更多猫咪信息...');
     // 在实际应用中，这里会从服务器获取更多数据
+}
+
+// ---------------- 猫脸识别功能 ----------------
+
+function setupRecognition() {
+    recognitionVideo = document.getElementById('recognitionVideo');
+    recognitionCanvas = document.getElementById('recognitionCanvas');
+    recognitionStatusEl = document.getElementById('recognitionStatus');
+    recognitionResultsEl = document.getElementById('recognitionResults');
+    recognitionFileInput = document.getElementById('recognitionFileInput');
+
+    const startCameraBtn = document.getElementById('startCameraBtn');
+    const capturePhotoBtn = document.getElementById('capturePhotoBtn');
+    const uploadRecognizeBtn = document.getElementById('uploadRecognizeBtn');
+
+    if (!recognitionVideo || !recognitionCanvas || !startCameraBtn || !capturePhotoBtn || !uploadRecognizeBtn) {
+        return;
+    }
+
+    startCameraBtn.addEventListener('click', startRecognitionCamera);
+    capturePhotoBtn.addEventListener('click', captureRecognitionPhoto);
+    uploadRecognizeBtn.addEventListener('click', handleRecognitionUpload);
+
+    window.addEventListener('beforeunload', stopRecognitionCamera);
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopRecognitionCamera();
+        }
+    });
+}
+
+function startRecognitionCamera() {
+    if (recognitionStream) {
+        setRecognitionStatus('摄像头已开启。', 'success');
+        return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setRecognitionStatus('当前浏览器不支持摄像头访问，请尝试上传图片识别。', 'error');
+        return;
+    }
+
+    setRecognitionStatus('正在请求摄像头权限…', 'info');
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(stream => {
+            recognitionStream = stream;
+            recognitionVideo.srcObject = stream;
+            recognitionVideo.play();
+            setRecognitionStatus('摄像头已开启，可以点击“拍摄并识别”。', 'success');
+        })
+        .catch(error => {
+            console.error('Error starting camera:', error);
+            setRecognitionStatus('无法开启摄像头，请检查权限或直接上传图片。', 'error');
+        });
+}
+
+function stopRecognitionCamera() {
+    if (recognitionStream) {
+        recognitionStream.getTracks().forEach(track => track.stop());
+        recognitionStream = null;
+    }
+    if (recognitionVideo) {
+        recognitionVideo.srcObject = null;
+    }
+}
+
+function captureRecognitionPhoto() {
+    if (!recognitionStream) {
+        setRecognitionStatus('请先点击“开启摄像头”。', 'error');
+        return;
+    }
+    if (!recognitionCanvas || !recognitionVideo) {
+        setRecognitionStatus('系统初始化失败，请刷新页面重试。', 'error');
+        return;
+    }
+
+    const context = recognitionCanvas.getContext('2d');
+    recognitionCanvas.width = recognitionVideo.videoWidth || 640;
+    recognitionCanvas.height = recognitionVideo.videoHeight || 480;
+    context.drawImage(recognitionVideo, 0, 0, recognitionCanvas.width, recognitionCanvas.height);
+
+    recognitionCanvas.toBlob(blob => {
+        if (!blob) {
+            setRecognitionStatus('拍照失败，请重试。', 'error');
+            return;
+        }
+        recognizeCatImage(blob, 'camera');
+    }, 'image/jpeg', 0.9);
+}
+
+function handleRecognitionUpload() {
+    if (!recognitionFileInput || !recognitionFileInput.files.length) {
+        setRecognitionStatus('请先选择要上传的图片。', 'error');
+        return;
+    }
+    const file = recognitionFileInput.files[0];
+    recognizeCatImage(file, 'upload');
+}
+
+function recognizeCatImage(imageBlob, source) {
+    const formData = new FormData();
+    const filename = source === 'camera' ? `capture-${Date.now()}.jpg` : (imageBlob.name || `upload-${Date.now()}.jpg`);
+    formData.append('image', imageBlob, filename);
+
+    setRecognitionStatus('正在识别，请稍候…', 'info');
+
+    fetch('/api/cats/recognize', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+    })
+    .then(response => {
+        if (response.status === 401) {
+            setRecognitionStatus('请先登录后再使用猫脸识别功能。', 'error');
+            if (window.authSystem) {
+                window.authSystem.openModal('login');
+            }
+            throw new Error('未登录');
+        }
+        return response.json().then(data => ({ ok: response.ok, data }));
+    })
+    .then(({ ok, data }) => {
+        if (!ok) {
+            throw new Error(data.error || '识别失败，请稍后重试。');
+        }
+        setRecognitionStatus('识别完成。', 'success');
+        renderRecognitionResults(data);
+        if (source === 'upload' && recognitionFileInput) {
+            recognitionFileInput.value = '';
+        }
+    })
+    .catch(error => {
+        if (error.message !== '未登录') {
+            console.error('Recognition error:', error);
+            setRecognitionStatus(error.message || '识别失败，请稍后重试。', 'error');
+        }
+    });
+}
+
+function renderRecognitionResults(result) {
+    if (!recognitionResultsEl) return;
+    recognitionResultsEl.innerHTML = '';
+
+    const matches = result.matches || [];
+    if (!matches.length) {
+        recognitionResultsEl.innerHTML = '<p class="recognition-placeholder">未找到匹配的猫咪信息。您可以将照片提交给管理员补充到数据库中。</p>';
+        return;
+    }
+
+    matches.forEach(match => {
+        const card = document.createElement('div');
+        card.className = 'recognition-result-card';
+
+        const similarity = typeof match.similarity === 'number' ? Math.round(match.similarity * 100) : null;
+        const similarityText = similarity !== null ? `${similarity}%` : '未知';
+        const matchBadge = match.matched ? '<span class="recognition-badge" style="background-color:#d4edda;color:#155724;">可能是已登记的猫咪</span>' : '<span class="recognition-badge">待确认</span>';
+        const distanceText = typeof match.hamming_distance === 'number' ? `${match.hamming_distance}` : '—';
+
+        if (match.cat) {
+            const cat = match.cat;
+            const sterilizedText = cat.sterilized ? '已绝育' : '未绝育/未知';
+            const microchipText = cat.microchipped ? '有芯片' : '无芯片/未知';
+            const locationText = cat.last_known_location || '暂无记录';
+            const notes = cat.special_notes || '暂无说明';
+            const markings = cat.unique_markings || '暂无描述';
+            const referenceImage = match.reference_image_path ? `<img src="/${match.reference_image_path}" alt="${cat.name || '参考图'}" style="width:100%;max-width:240px;border-radius:6px;margin-top:8px;">` : '';
+
+            card.innerHTML = `
+                <h3>${cat.name || '未命名猫咪'}</h3>
+                <p>${matchBadge}<span class="recognition-badge">匹配度 ${similarityText}</span><span class="recognition-badge">哈希距离 ${distanceText}</span></p>
+                <p><strong>编号:</strong> ${cat.identification_code || '暂无'}</p>
+                <p><strong>年龄:</strong> ${cat.age || '未知'} · <strong>性别:</strong> ${cat.gender || '未知'}</p>
+                <p><strong>绝育情况:</strong> ${sterilizedText} · <strong>芯片:</strong> ${microchipText}</p>
+                <p><strong>显著特征:</strong> ${markings}</p>
+                <p><strong>最新位置:</strong> ${locationText}</p>
+                <p><strong>档案备注:</strong> ${notes}</p>
+                ${referenceImage}
+            `;
+        } else {
+            card.innerHTML = `
+                <h3>未找到匹配的档案</h3>
+                <p>${matchBadge}<span class="recognition-badge">匹配度 ${similarityText}</span><span class="recognition-badge">哈希距离 ${distanceText}</span></p>
+                <p>当前数据库中暂无与该照片高度相似的猫咪，您可以联系管理员补充档案。</p>
+            `;
+        }
+
+        recognitionResultsEl.appendChild(card);
+    });
+}
+
+function setRecognitionStatus(message, type = 'info') {
+    if (!recognitionStatusEl) return;
+    recognitionStatusEl.textContent = message || '';
+    recognitionStatusEl.className = `recognition-status ${type}`;
 }

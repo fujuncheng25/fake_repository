@@ -146,8 +146,6 @@
             border-radius: 4px;
             cursor: pointer;
         }
-<<<<<<< HEAD
-=======
         
         .cat-summary-row td {
             vertical-align: middle;
@@ -344,7 +342,138 @@
             border-color: #bee5eb;
             color: #0c5460;
         }
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
+
+        .recognition-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .panel-card {
+            background-color: #ffffff;
+            border: 1px solid #e4e4e4;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        .panel-card h3 {
+            margin-top: 0;
+            margin-bottom: 12px;
+        }
+
+        .form-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .form-grid.two-column {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .form-grid label {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-weight: 600;
+            color: #333;
+            font-size: 0.9rem;
+        }
+
+        .form-grid input[type="text"],
+        .form-grid input[type="number"],
+        .form-grid input[type="email"],
+        .form-grid textarea,
+        .form-grid select {
+            padding: 9px 10px;
+            border: 1px solid #d5d5d5;
+            border-radius: 6px;
+            font-size: 0.95rem;
+        }
+
+        .form-grid textarea {
+            min-height: 96px;
+            resize: vertical;
+        }
+
+        .switch-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .switch-row label {
+            flex-direction: row;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+        }
+
+        .info-note {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 8px;
+        }
+
+        .status-bar {
+            margin-top: 12px;
+            font-size: 0.9rem;
+        }
+
+        .status-bar.success {
+            color: #2f8f46;
+        }
+
+        .status-bar.error {
+            color: #c0392b;
+        }
+
+        .file-input {
+            margin-top: 12px;
+        }
+
+        .reference-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .reference-preview img {
+            width: 120px;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+            font-size: 0.9rem;
+        }
+
+        .data-table th,
+        .data-table td {
+            border: 1px solid #e2e2e2;
+            padding: 8px 10px;
+            text-align: left;
+        }
+
+        .data-table th {
+            background-color: #f5f5f5;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .data-table tbody tr:nth-child(odd) {
+            background-color: #fafafa;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
     </style>
 </head>
 <body>
@@ -375,10 +504,7 @@
                     <button id="refreshBtn" class="btn btn-primary">刷新数据</button>
                 </div>
             </div>
-<<<<<<< HEAD
-=======
             <div id="adminMessageBar" class="admin-message" role="status" aria-live="polite"></div>
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
 
             <div class="stats-grid">
                 <div class="stat-card">
@@ -423,8 +549,6 @@
                 </div>
             </div>
 
-<<<<<<< HEAD
-=======
             <div class="admin-section" id="declinedCatsSection" style="display: none;">
                 <h2>已拒绝的猫咪提交 <span id="declinedCatsCount" class="section-count"></span></h2>
                 <div class="admin-content">
@@ -449,7 +573,6 @@
                 </div>
             </div>
 
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
             <div class="admin-section">
                 <h2>用户管理</h2>
                 <div class="admin-content">
@@ -460,10 +583,7 @@
                                 <th>姓名</th>
                                 <th>邮箱</th>
                                 <th>角色</th>
-<<<<<<< HEAD
-=======
                                 <th>验证状态</th>
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
                                 <th>创建时间</th>
                                 <th>操作</th>
                             </tr>
@@ -502,8 +622,103 @@
                 <p>管理网站各个页面的文本内容。</p>
                 <button onclick="window.location.href='/content-management'" class="admin-btn">管理网站内容</button>
             </div>
-<<<<<<< HEAD
-=======
+
+            <div class="admin-section">
+                <h2>猫脸识别管理</h2>
+                <div class="admin-content">
+                    <div class="recognition-grid">
+                        <div class="panel-card">
+                            <h3>创建猫咪档案</h3>
+                            <form id="catProfileForm" class="form-grid">
+                                <div class="form-grid two-column">
+                                    <label>猫咪名称
+                                        <input type="text" id="profileName" required placeholder="例如：小花">
+                                    </label>
+                                    <label>性别
+                                        <select id="profileGender" required>
+                                            <option value="">请选择</option>
+                                            <option value="雌性">雌性</option>
+                                            <option value="雄性">雄性</option>
+                                            <option value="未知">未知</option>
+                                        </select>
+                                    </label>
+                                    <label>年龄
+                                        <input type="text" id="profileAge" placeholder="例如：2岁">
+                                    </label>
+                                    <label>识别编号
+                                        <input type="text" id="profileIdentification" placeholder="内部编号（可选）">
+                                    </label>
+                                </div>
+                                <div class="switch-row">
+                                    <label><input type="checkbox" id="profileSterilized"> 已绝育</label>
+                                    <label><input type="checkbox" id="profileMicrochipped"> 已植入芯片</label>
+                                </div>
+                                <label>特别标记
+                                    <input type="text" id="profileUniqueMarkings" placeholder="例如：左耳缺角、尾巴尾端白色">
+                                </label>
+                                <label>最近出现地点
+                                    <input type="text" id="profileLocation" placeholder="最近一次发现的地点（可选）">
+                                </label>
+                                <label>猫咪描述
+                                    <textarea id="profileDescription" placeholder="基本性格、健康状况、救助背景等信息"></textarea>
+                                </label>
+                                <label>特别说明
+                                    <textarea id="profileSpecialNotes" placeholder="给内部识别使用的特殊说明（可选）"></textarea>
+                                </label>
+                                <button type="submit" class="btn btn-primary">保存档案</button>
+                                <div id="catProfileStatus" class="status-bar"></div>
+                            </form>
+                        </div>
+
+                        <div class="panel-card">
+                            <h3>上传识别参考图</h3>
+                            <div class="form-grid">
+                                <label>选择猫咪
+                                    <select id="referenceCatSelect">
+                                        <option value="">请先创建或选择猫咪</option>
+                                    </select>
+                                </label>
+                                <label class="file-input">参考图像（可多选）
+                                    <input type="file" id="catReferenceImages" name="images" multiple accept="image/*">
+                                </label>
+                                <label>主展示图策略
+                                    <select id="referencePrimaryMode">
+                                        <option value="auto">自动设为首张</option>
+                                        <option value="none">不设置展示图</option>
+                                    </select>
+                                </label>
+                                <button type="button" id="uploadReferenceBtn" class="btn btn-primary">上传并生成哈希</button>
+                                <div id="referenceUploadStatus" class="status-bar"></div>
+                                <div id="referencePreview" class="reference-preview"></div>
+                            </div>
+                        </div>
+
+                        <div class="panel-card">
+                            <h3>识别参数设置</h3>
+                            <div class="form-grid">
+                                <label>匹配阈值
+                                    <input type="number" id="recognitionThreshold" step="0.01" min="0.1" max="0.99">
+                                </label>
+                                <label>返回结果数量
+                                    <input type="number" id="recognitionMaxResults" min="1" max="10">
+                                </label>
+                                <label>最大哈希距离
+                                    <input type="number" id="recognitionMaxHamming" min="0" placeholder="留空表示自动">
+                                </label>
+                                <label>模型权重路径
+                                    <input type="text" id="recognitionModelPath" placeholder="本地模型文件路径或留空使用默认">
+                                </label>
+                                <label>哈希长度覆盖
+                                    <input type="number" id="recognitionHashLength" min="64" step="1" placeholder="留空使用默认长度">
+                                </label>
+                                <button type="button" id="saveRecognitionSettingsBtn" class="btn btn-primary">保存识别设置</button>
+                                <div id="recognitionSettingsStatus" class="status-bar"></div>
+                                <div id="recognitionStats" class="info-note"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <div class="admin-section">
                 <h2>邮件服务配置</h2>
@@ -569,7 +784,84 @@
                     </div>
                 </div>
             </div>
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
+
+            <div class="admin-section">
+                <h2>数据库可视化</h2>
+                <div class="admin-content">
+                    <div class="panel-card" style="margin-bottom: 20px;">
+                        <h3>猫咪结构体概览</h3>
+                        <p class="info-note">展示系统中每只猫的结构体信息（包含聚合哈希等核心字段）。</p>
+                        <div class="status-bar" id="catStructureStatus"></div>
+                        <div class="table-wrapper">
+                            <table class="data-table" id="catStructureTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>名称</th>
+                                        <th>参考图数量</th>
+                                        <th>聚合哈希</th>
+                                        <th>哈希长度</th>
+                                        <th>绝育</th>
+                                        <th>芯片</th>
+                                        <th>更新时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="8" style="text-align:center;">正在加载...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="panel-card" style="margin-bottom: 20px;">
+                        <h3>参考图片记录</h3>
+                        <p class="info-note">列出所有参考图片，包括是否主图、哈希及特征向量长度。</p>
+                        <div class="status-bar" id="referenceTableStatus"></div>
+                        <div class="table-wrapper">
+                            <table class="data-table" id="referenceTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>猫咪</th>
+                                        <th>主图</th>
+                                        <th>哈希长度</th>
+                                        <th>向量字节数</th>
+                                        <th>图片路径</th>
+                                        <th>创建时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="7" style="text-align:center;">正在加载...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="panel-card">
+                        <h3>识别事件日志</h3>
+                        <p class="info-note">最近的识别请求记录，包括匹配结果、相似度、哈希距离等信息。</p>
+                        <div class="status-bar" id="recognitionEventsStatus"></div>
+                        <div class="table-wrapper">
+                            <table class="data-table" id="recognitionEventsTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>匹配到的猫</th>
+                                        <th>匹配成功</th>
+                                        <th>相似度</th>
+                                        <th>哈希距离</th>
+                                        <th>请求元数据</th>
+                                        <th>创建时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="7" style="text-align:center;">正在加载...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -584,25 +876,58 @@
         document.addEventListener('DOMContentLoaded', function() {
             checkAdminAccess();
             loadDashboardData();
-<<<<<<< HEAD
-=======
             loadResendApiKey();
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
+            loadRecognitionSettings();
+            loadRecognitionCatProfiles();
+            loadReferenceTable();
+            loadRecognitionEvents();
             
-            // Bind events
             document.getElementById('logoutBtn').addEventListener('click', logout);
-            document.getElementById('refreshBtn').addEventListener('click', loadDashboardData);
-<<<<<<< HEAD
-        });
-
-=======
+            document.getElementById('refreshBtn').addEventListener('click', () => {
+                loadDashboardData();
+                loadRecognitionCatProfiles(true);
+                loadReferenceTable(true);
+                loadRecognitionEvents(true);
+            });
             document.getElementById('saveApiKeyBtn').addEventListener('click', saveResendApiKey);
             document.getElementById('saveFromEmailBtn').addEventListener('click', saveResendFromEmail);
             document.getElementById('saveBaseUrlBtn').addEventListener('click', saveBaseUrl);
             document.getElementById('testApiKeyBtn').addEventListener('click', testResendApiKey);
+
+            const catProfileForm = document.getElementById('catProfileForm');
+            if (catProfileForm) {
+                catProfileForm.addEventListener('submit', handleCatProfileSubmit);
+            }
+            const uploadReferenceBtn = document.getElementById('uploadReferenceBtn');
+            if (uploadReferenceBtn) {
+                uploadReferenceBtn.addEventListener('click', uploadReferenceImages);
+            }
+            const referenceSelect = document.getElementById('referenceCatSelect');
+            if (referenceSelect) {
+                referenceSelect.addEventListener('change', renderSelectedCatReferencePreview);
+            }
+            const saveRecognitionSettingsBtn = document.getElementById('saveRecognitionSettingsBtn');
+            if (saveRecognitionSettingsBtn) {
+                saveRecognitionSettingsBtn.addEventListener('click', saveRecognitionSettings);
+            }
         });
 
         let adminMessageTimeout;
+        let recognitionCats = [];
+        let referenceRecords = [];
+        let recognitionEvents = [];
+
+        function updateStatusBar(elementId, message, type = 'info') {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            if (!message) {
+                el.textContent = '';
+                el.className = 'status-bar';
+                return;
+            }
+            el.textContent = message;
+            el.className = `status-bar ${type}`;
+        }
 
         function showActionMessage(message, type = 'info') {
             const bar = document.getElementById('adminMessageBar');
@@ -622,8 +947,6 @@
                 bar.textContent = '';
             }, 4500);
         }
-
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         function checkAdminAccess() {
             fetch('/api/current_user')
                 .then(response => response.json())
@@ -646,41 +969,6 @@
         }
 
         function loadCats() {
-<<<<<<< HEAD
-            fetch('/api/admin/cats')
-                .then(response => response.json())
-                .then(cats => {
-                    document.getElementById('catsCount').textContent = cats.length;
-                    const tbody = document.querySelector('#catsTable tbody');
-                    tbody.innerHTML = '';
-                    
-                    cats.forEach(cat => {
-                        const row = tbody.insertRow();
-                        const status = cat.is_approved ? '已批准' : '待审核';
-                        const statusClass = cat.is_approved ? 'status-approved' : 'status-pending';
-                        
-                        row.innerHTML = `
-                            <td>${cat.id}</td>
-                            <td>${cat.name}</td>
-                            <td>${cat.age}</td>
-                            <td>${cat.gender}</td>
-                            <td>${cat.description || ''}</td>
-                            <td>User ${cat.owner_id}</td>
-                            <td><span class="status-badge ${statusClass}">${status}</span></td>
-                            <td>${new Date(cat.created_at).toLocaleDateString()}</td>
-                            <td>
-                                <div class="action-buttons">
-                                    ${cat.is_approved ? 
-                                        `<button class="btn btn-secondary" onclick="rejectCat(${cat.id})">撤销</button>` : 
-                                        `<button class="btn btn-primary" onclick="approveCat(${cat.id})">批准</button>
-                                         <button class="btn btn-danger" onclick="rejectCat(${cat.id})">拒绝</button>`}
-                                </div>
-                            </td>
-                        `;
-                    });
-                })
-                .catch(error => console.error('Error loading cats:', error));
-=======
             fetch('/api/admin/cats', { credentials: 'include' })
                 .then(response => {
                     if (!response.ok) {
@@ -1166,7 +1454,6 @@
                 statusEl.textContent = '';
                 statusEl.style.color = '#666';
             }
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         }
 
         function loadUsers() {
@@ -1179,33 +1466,24 @@
                     
                     users.forEach(user => {
                         const row = tbody.insertRow();
-<<<<<<< HEAD
-=======
                         const isVerified = user.is_verified !== undefined ? user.is_verified : false;
-                        const verifiedStatus = isVerified ? 
-                            '<span class="status-badge status-approved">已验证</span>' : 
-                            '<span class="status-badge status-pending">未验证</span>';
-                        const verifyButton = !user.is_admin ? 
-                            (isVerified ? 
-                                `<button class="btn btn-secondary" onclick="toggleUserVerification(${user.id}, false)">取消验证</button>` :
-                                `<button class="btn btn-primary" onclick="toggleUserVerification(${user.id}, true)">验证用户</button>`
-                            ) : '';
-                        const deleteButton = !user.is_admin ? 
-                            `<button class="btn btn-danger" onclick="deleteUser(${user.id})">删除</button>` :
-                            '';
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
+                        const verifiedStatus = isVerified
+                            ? '<span class="status-badge status-approved">已验证</span>'
+                            : '<span class="status-badge status-pending">未验证</span>';
+                        const verifyButton = !user.is_admin
+                            ? (isVerified
+                                ? `<button class="btn btn-secondary" onclick="toggleUserVerification(${user.id}, false)">取消验证</button>`
+                                : `<button class="btn btn-primary" onclick="toggleUserVerification(${user.id}, true)">验证用户</button>`)
+                            : '';
+                        const deleteButton = !user.is_admin
+                            ? `<button class="btn btn-danger" onclick="deleteUser(${user.id})">删除</button>`
+                            : '';
+
                         row.innerHTML = `
                             <td>${user.id}</td>
                             <td>${user.name}</td>
                             <td>${user.email}</td>
                             <td>${user.is_admin ? '管理员' : '普通用户'}</td>
-<<<<<<< HEAD
-                            <td>${new Date(user.created_at).toLocaleDateString()}</td>
-                            <td>
-                                <div class="action-buttons">
-                                    ${user.is_admin ? '' : '<button class="btn btn-secondary">设为管理员</button>'}
-                                    <button class="btn btn-danger">删除</button>
-=======
                             <td>${verifiedStatus}</td>
                             <td>${new Date(user.created_at).toLocaleDateString()}</td>
                             <td>
@@ -1213,7 +1491,6 @@
                                     ${verifyButton}
                                     ${user.is_admin ? '' : '<button class="btn btn-secondary">设为管理员</button>'}
                                     ${deleteButton}
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
                                 </div>
                             </td>
                         `;
@@ -1269,45 +1546,6 @@
         }
 
         function approveCat(catId) {
-<<<<<<< HEAD
-            if (confirm(`确定要批准这只猫咪 (ID: ${catId}) 吗？`)) {
-                fetch(`/api/cats/${catId}/approve`, {
-                    method: 'POST'
-                })
-                .then(response => {
-                    if (response.ok) {
-                        alert('猫咪已批准！');
-                        loadCats();
-                    } else {
-                        alert('批准失败，请重试');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('批准失败，请重试');
-                });
-            }
-        }
-
-        function rejectCat(catId) {
-            if (confirm(`确定要拒绝这只猫咪 (ID: ${catId}) 吗？`)) {
-                fetch(`/api/cats/${catId}/reject`, {
-                    method: 'POST'
-                })
-                .then(response => {
-                    if (response.ok) {
-                        alert('猫咪已拒绝！');
-                        loadCats();
-                    } else {
-                        alert('拒绝失败，请重试');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('拒绝失败，请重试');
-                });
-            }
-=======
             if (!confirm(`确定要批准这只猫咪 (ID: ${catId}) 吗？`)) {
                 return;
             }
@@ -1401,7 +1639,6 @@
             .finally(() => {
                 setCatActionButtonsLoading(catId, 'restore', false);
             });
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
         }
 
         function logout() {
@@ -1413,8 +1650,6 @@
             })
             .catch(error => console.error('Error:', error));
         }
-<<<<<<< HEAD
-=======
 
         function loadResendApiKey() {
             fetch('/api/admin/settings/resend-api-key')
@@ -1642,7 +1877,388 @@
                 alert('删除失败，请重试');
             });
         }
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
+
+        function handleCatProfileSubmit(event) {
+            event.preventDefault();
+            updateStatusBar('catProfileStatus', '');
+
+            const name = document.getElementById('profileName').value.trim();
+            const gender = document.getElementById('profileGender').value.trim();
+
+            if (!name || !gender) {
+                updateStatusBar('catProfileStatus', '请填写猫咪名称和性别。', 'error');
+                return;
+            }
+
+            const payload = {
+                name,
+                gender,
+                age: document.getElementById('profileAge').value.trim(),
+                description: document.getElementById('profileDescription').value.trim(),
+                sterilized: document.getElementById('profileSterilized').checked,
+                microchipped: document.getElementById('profileMicrochipped').checked,
+                unique_markings: document.getElementById('profileUniqueMarkings').value.trim(),
+                last_known_location: document.getElementById('profileLocation').value.trim(),
+                identification_code: document.getElementById('profileIdentification').value.trim(),
+                special_notes: document.getElementById('profileSpecialNotes').value.trim()
+            };
+
+            fetch('/api/admin/cat-profiles', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok) {
+                    throw new Error(data.error || '保存猫咪档案失败，请稍后重试。');
+                }
+                updateStatusBar('catProfileStatus', '猫咪档案创建成功。', 'success');
+                showActionMessage('新猫咪档案已创建。', 'success');
+                document.getElementById('catProfileForm').reset();
+                loadCats();
+                loadRecognitionCatProfiles();
+            })
+            .catch(error => {
+                updateStatusBar('catProfileStatus', error.message, 'error');
+            });
+        }
+
+        function loadRecognitionCatProfiles(isRefresh = false) {
+            if (!isRefresh) {
+                updateStatusBar('catStructureStatus', '正在加载猫咪档案...', 'info');
+            }
+            fetch('/api/admin/cat-profiles', { credentials: 'include' })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('加载猫咪档案失败，请稍后重试。');
+                    }
+                    return response.json();
+                })
+                .then(cats => {
+                    recognitionCats = cats || [];
+                    const select = document.getElementById('referenceCatSelect');
+                    if (select) {
+                        const previousValue = select.value;
+                        if (!recognitionCats.length) {
+                            select.innerHTML = '<option value="">暂无猫咪档案</option>';
+                        } else {
+                            select.innerHTML = recognitionCats.map(cat => {
+                                const referenceCount = (cat.reference_images && cat.reference_images.length) || cat.reference_count || 0;
+                                const label = `${cat.name} (#${cat.id})${referenceCount ? ` · 参考图:${referenceCount}` : ''}`;
+                                return `<option value="${cat.id}">${label}</option>`;
+                            }).join('');
+                        }
+                        if (previousValue && select.querySelector(`option[value="${previousValue}"]`)) {
+                            select.value = previousValue;
+                        }
+                        renderSelectedCatReferencePreview();
+                    }
+                    renderCatStructureTable();
+                    updateStatusBar('catStructureStatus', `共 ${recognitionCats.length} 条猫咪档案。`, 'info');
+                })
+                .catch(error => {
+                    updateStatusBar('referenceUploadStatus', error.message, 'error');
+                    updateStatusBar('catStructureStatus', error.message, 'error');
+                });
+        }
+
+        function renderSelectedCatReferencePreview() {
+            const select = document.getElementById('referenceCatSelect');
+            const preview = document.getElementById('referencePreview');
+            const status = document.getElementById('referenceUploadStatus');
+            if (!select || !preview) return;
+
+            preview.innerHTML = '';
+            const selectedId = select.value;
+            if (!selectedId) {
+                if (status) status.textContent = '';
+                preview.innerHTML = '<span class="info-note">请选择猫咪后上传参考图像。</span>';
+                return;
+            }
+
+            const cat = recognitionCats.find(item => String(item.id) === String(selectedId));
+            if (!cat) {
+                preview.innerHTML = '<span class="info-note">未找到匹配的猫咪档案。</span>';
+                return;
+            }
+
+            const references = cat.reference_images || [];
+            if (!references.length) {
+                preview.innerHTML = '<span class="info-note">暂未上传参考图像。</span>';
+                return;
+            }
+
+            references.forEach(ref => {
+                const wrapper = document.createElement('div');
+                wrapper.style.display = 'flex';
+                wrapper.style.flexDirection = 'column';
+                wrapper.style.alignItems = 'center';
+                wrapper.style.gap = '6px';
+
+                const img = document.createElement('img');
+                img.src = `/${ref.image_path}`;
+                img.alt = cat.name || '参考图像';
+                img.title = `参考图 #${ref.id}${ref.is_primary ? ' · 主展示图' : ''}\n哈希长度: ${ref.hash_length || '未知'}`;
+                wrapper.appendChild(img);
+
+                if (ref.is_primary) {
+                    const badge = document.createElement('span');
+                    badge.className = 'status-badge status-approved';
+                    badge.textContent = '主展示图';
+                    wrapper.appendChild(badge);
+                }
+                preview.appendChild(wrapper);
+            });
+        }
+
+        function uploadReferenceImages() {
+            updateStatusBar('referenceUploadStatus', '');
+            const catId = document.getElementById('referenceCatSelect').value;
+            const fileInput = document.getElementById('catReferenceImages');
+            if (!catId) {
+                updateStatusBar('referenceUploadStatus', '请先选择需要上传参考图像的猫咪。', 'error');
+                return;
+            }
+            if (!fileInput || !fileInput.files.length) {
+                updateStatusBar('referenceUploadStatus', '请至少选择一张图片。', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            Array.from(fileInput.files).forEach(file => formData.append('images', file));
+
+            const primaryMode = document.getElementById('referencePrimaryMode').value;
+            if (primaryMode === 'auto') {
+                formData.append('primary_index', '0');
+            } else if (primaryMode === 'none') {
+                formData.append('primary_index', '-1');
+            }
+
+            updateStatusBar('referenceUploadStatus', '正在上传并生成哈希，请稍候…', 'info');
+
+            fetch(`/api/admin/cat-profiles/${catId}/reference-images`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok) {
+                    throw new Error(data.error || '上传失败，请稍后重试。');
+                }
+                updateStatusBar('referenceUploadStatus', '参考图像上传成功。', 'success');
+                showActionMessage('参考图像已上传并生成哈希。', 'success');
+                document.getElementById('catReferenceImages').value = '';
+                loadRecognitionCatProfiles();
+                loadReferenceTable(true);
+                loadCats();
+            })
+            .catch(error => {
+                updateStatusBar('referenceUploadStatus', error.message, 'error');
+            });
+        }
+
+        function loadRecognitionSettings() {
+            fetch('/api/cat-recognition/settings', { credentials: 'include' })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('无法获取识别设置，请稍后重试。');
+                    }
+                    return response.json();
+                })
+                .then(settings => {
+                    document.getElementById('recognitionThreshold').value = settings.threshold?.toFixed(2) || '';
+                    document.getElementById('recognitionMaxResults').value = settings.max_results || 3;
+                    document.getElementById('recognitionMaxHamming').value = settings.max_hamming ?? '';
+                    document.getElementById('recognitionModelPath').value = settings.model_path || '';
+                    document.getElementById('recognitionHashLength').value = settings.hash_length_override || '';
+
+                    const stats = document.getElementById('recognitionStats');
+                    if (stats) {
+                        const referenceCount = settings.reference_count ?? 0;
+                        const catCount = settings.cat_count ?? 0;
+                        stats.textContent = `参考图像：${referenceCount} · 档案数量：${catCount} · 运行设备：${settings.device || 'CPU'}`;
+                    }
+                })
+                .catch(error => {
+                    updateStatusBar('recognitionSettingsStatus', error.message, 'error');
+                });
+        }
+
+        function saveRecognitionSettings() {
+            updateStatusBar('recognitionSettingsStatus', '正在保存设置…', 'info');
+            const thresholdValue = document.getElementById('recognitionThreshold').value;
+            const maxResultsValue = document.getElementById('recognitionMaxResults').value;
+            const maxHammingValue = document.getElementById('recognitionMaxHamming').value;
+            const modelPathValue = document.getElementById('recognitionModelPath').value.trim();
+            const hashLengthValue = document.getElementById('recognitionHashLength').value;
+
+            const payload = {};
+            if (thresholdValue) payload.threshold = thresholdValue;
+            if (maxResultsValue) payload.max_results = maxResultsValue;
+            payload.max_hamming = maxHammingValue;
+            payload.model_path = modelPathValue;
+            payload.hash_length_override = hashLengthValue;
+
+            fetch('/api/admin/cat-recognition/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok) {
+                    throw new Error(data.errors ? data.errors.join('，') : (data.error || '保存失败'));
+                }
+                updateStatusBar('recognitionSettingsStatus', '识别设置已更新。', 'success');
+                showActionMessage('识别参数保存成功。', 'success');
+                loadRecognitionSettings();
+                loadRecognitionCatProfiles();
+            })
+            .catch(error => {
+                updateStatusBar('recognitionSettingsStatus', error.message, 'error');
+            });
+        }
+
+        function renderCatStructureTable() {
+            const tbody = document.querySelector('#catStructureTable tbody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            if (!recognitionCats.length) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无猫咪档案。</td></tr>';
+                return;
+            }
+            recognitionCats.forEach(cat => {
+                const row = document.createElement('tr');
+                const hash = cat.reference_hash_hex || '';
+                const hashPreview = hash ? `${hash.slice(0, 12)}…` : '未生成';
+                row.innerHTML = `
+                    <td>${cat.id}</td>
+                    <td>${escapeHtml(cat.name || '未命名')}</td>
+                    <td>${cat.reference_count || 0}</td>
+                    <td title="${hash}">${hashPreview}</td>
+                    <td>${cat.reference_hash_length || '—'}</td>
+                    <td>${formatBool(cat.sterilized)}</td>
+                    <td>${formatBool(cat.microchipped)}</td>
+                    <td>${cat.updated_at || '—'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function loadReferenceTable(isRefresh = false) {
+            if (!isRefresh) {
+                updateStatusBar('referenceTableStatus', '正在加载参考图片记录...', 'info');
+            }
+            fetch('/api/admin/cat-references', { credentials: 'include' })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('加载参考图片记录失败，请稍后重试。');
+                    }
+                    return response.json();
+                })
+                .then(records => {
+                    referenceRecords = records || [];
+                    renderReferenceTable();
+                    updateStatusBar('referenceTableStatus', `共 ${referenceRecords.length} 条参考图片记录。`, 'info');
+                })
+                .catch(error => {
+                    updateStatusBar('referenceTableStatus', error.message, 'error');
+                });
+        }
+
+        function renderReferenceTable() {
+            const tbody = document.querySelector('#referenceTable tbody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            if (!referenceRecords.length) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无参考图片。</td></tr>';
+                return;
+            }
+            referenceRecords.forEach(record => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${record.id}</td>
+                    <td>${escapeHtml(record.cat_name || (record.cat_id ? `#${record.cat_id}` : '未知'))}</td>
+                    <td>${formatBool(record.is_primary)}</td>
+                    <td>${record.hash_length || '—'}</td>
+                    <td>${record.embedding_bytes || 0}</td>
+                    <td title="${record.image_path || ''}">${escapeHtml(record.image_path || '—')}</td>
+                    <td>${record.created_at || '—'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function loadRecognitionEvents(isRefresh = false) {
+            if (!isRefresh) {
+                updateStatusBar('recognitionEventsStatus', '正在加载识别事件日志...', 'info');
+            }
+            fetch('/api/admin/cat-recognition/events', { credentials: 'include' })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('加载识别日志失败，请稍后重试。');
+                    }
+                    return response.json();
+                })
+                .then(events => {
+                    recognitionEvents = events || [];
+                    renderRecognitionEvents();
+                    updateStatusBar('recognitionEventsStatus', `显示最近 ${recognitionEvents.length} 条识别事件。`, 'info');
+                })
+                .catch(error => {
+                    updateStatusBar('recognitionEventsStatus', error.message, 'error');
+                });
+        }
+
+        function renderRecognitionEvents() {
+            const tbody = document.querySelector('#recognitionEventsTable tbody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            if (!recognitionEvents.length) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无识别事件记录。</td></tr>';
+                return;
+            }
+            recognitionEvents.forEach(event => {
+                const metadata = event.request_metadata;
+                let metadataText = '';
+                if (metadata && typeof metadata === 'object') {
+                    metadataText = Object.entries(metadata)
+                        .map(([key, value]) => `${key}: ${value}`)
+                        .join(', ');
+                } else if (metadata) {
+                    metadataText = String(metadata);
+                } else {
+                    metadataText = '—';
+                }
+                const similarity = typeof event.match_score === 'number'
+                    ? `${Math.round(event.match_score * 100)}%`
+                    : '—';
+                const distance = event.hash_distance !== null && event.hash_distance !== undefined
+                    ? event.hash_distance
+                    : '—';
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${event.id}</td>
+                    <td>${escapeHtml(event.cat_name || (event.cat_id ? `#${event.cat_id}` : '未匹配'))}</td>
+                    <td>${event.matched ? '成功' : '未命中'}</td>
+                    <td>${similarity}</td>
+                    <td>${distance}</td>
+                    <td title="${metadataText}">${escapeHtml(metadataText)}</td>
+                    <td>${event.created_at || '—'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function formatBool(value) {
+            return value ? '是' : '否';
+        }
+
     </script>
 </body>
 </html>
