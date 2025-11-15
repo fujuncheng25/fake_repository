@@ -1,11 +1,11 @@
-// 邮箱认证系统
+﻿// 閭璁よ瘉绯荤粺
 class AuthSystem {
     constructor() {
         this.init();
     }
 
     init() {
-        // 绑定事件监听器
+        // 缁戝畾浜嬩欢鐩戝惉鍣?
         this.bindEvents();
         // Check current user status
         this.checkCurrentUser();
@@ -32,7 +32,7 @@ class AuthSystem {
     }
 
     bindEvents() {
-        // 获取DOM元素
+        // 鑾峰彇DOM鍏冪礌
         const loginBtn = document.getElementById('loginBtn');
         const registerBtn = document.getElementById('registerBtn');
         const loginModal = document.getElementById('loginModal');
@@ -44,12 +44,12 @@ class AuthSystem {
         const registerForm = document.getElementById('registerForm');
         const joinUsBtn = document.getElementById('joinUsBtn');
 
-        // 绑定按钮点击事件
+        // 缁戝畾鎸夐挳鐐瑰嚮浜嬩欢
         if (loginBtn) loginBtn.addEventListener('click', () => this.openModal('login'));
         if (registerBtn) registerBtn.addEventListener('click', () => this.openModal('register'));
         if (joinUsBtn) joinUsBtn.addEventListener('click', () => this.openModal('register'));
         
-        // 绑定模态框切换事件
+        // 缁戝畾妯℃€佹鍒囨崲浜嬩欢
         if (showRegisterLink) showRegisterLink.addEventListener('click', (e) => {
             e.preventDefault();
             this.closeModal('login');
@@ -62,7 +62,7 @@ class AuthSystem {
             this.openModal('login');
         });
         
-        // 绑定关闭按钮事件
+        // 缁戝畾鍏抽棴鎸夐挳浜嬩欢
         closeButtons.forEach(button => {
             button.addEventListener('click', () => {
                 const modal = button.closest('.modal');
@@ -70,13 +70,13 @@ class AuthSystem {
             });
         });
         
-        // 点击模态框外部关闭
+        // 鐐瑰嚮妯℃€佹澶栭儴鍏抽棴
         window.addEventListener('click', (e) => {
             if (e.target === loginModal) this.closeModal('login');
             if (e.target === registerModal) this.closeModal('register');
         });
         
-        // 绑定表单提交事件
+        // 缁戝畾琛ㄥ崟鎻愪氦浜嬩欢
         if (loginForm) loginForm.addEventListener('submit', (e) => this.handleLogin(e));
         if (registerForm) registerForm.addEventListener('submit', (e) => this.handleRegister(e));
     }
@@ -97,20 +97,20 @@ class AuthSystem {
         }
     }
 
-    // 验证邮箱格式
+    // 楠岃瘉閭鏍煎紡
     validateEmail(email) {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         return emailRegex.test(email);
     }
 
-    // 验证密码强度
+    // 楠岃瘉瀵嗙爜寮哄害
     validatePassword(password) {
-        // 至少8位，包含字母和数字
+        // 鑷冲皯8浣嶏紝鍖呭惈瀛楁瘝鍜屾暟瀛?
         const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/;
         return passwordRegex.test(password);
     }
 
-    // 用户注册
+    // 鐢ㄦ埛娉ㄥ唽
     handleRegister(e) {
         e.preventDefault();
         
@@ -119,19 +119,19 @@ class AuthSystem {
         const password = document.getElementById('registerPassword').value;
         const confirmPassword = document.getElementById('registerConfirmPassword').value;
         
-        // 验证输入
+        // 楠岃瘉杈撳叆
         if (!name || !email || !password || !confirmPassword) {
             alert('请填写所有字段');
             return;
         }
         
         if (!this.validateEmail(email)) {
-            alert('请输入有效的邮箱地址');
+            alert('璇疯緭鍏ユ湁鏁堢殑閭鍦板潃');
             return;
         }
         
         if (!this.validatePassword(password)) {
-            alert('密码至少8位，且包含字母和数字');
+            alert('瀵嗙爜鑷冲皯8浣嶏紝涓斿寘鍚瓧姣嶅拰鏁板瓧');
             return;
         }
         
@@ -140,7 +140,7 @@ class AuthSystem {
             return;
         }
         
-        // 调用API注册用户
+        // 璋冪敤API娉ㄥ唽鐢ㄦ埛
         fetch('/api/register', {
             method: 'POST',
             headers: {
@@ -161,12 +161,6 @@ class AuthSystem {
             }
         })
         .then(data => {
-<<<<<<< HEAD
-            alert('注册成功！');
-            this.closeModal('register');
-            // 自动登录
-            this.login(email, password);
-=======
             if (data.email_sent) {
                 alert('注册成功！\n\n我们已向您的邮箱发送了一封验证邮件。\n请检查您的邮箱并点击验证链接来激活您的账户。\n\n验证后您才能登录。');
             } else {
@@ -176,14 +170,14 @@ class AuthSystem {
             // Clear form
             document.getElementById('registerForm').reset();
             // Don't auto-login - user needs to verify email first
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
+
         })
         .catch(error => {
-            alert(error.error || '注册失败');
+            alert(error.error || '娉ㄥ唽澶辫触');
         });
     }
 
-    // 用户登录
+    // 鐢ㄦ埛鐧诲綍
     handleLogin(e) {
         e.preventDefault();
         
@@ -196,14 +190,14 @@ class AuthSystem {
         }
         
         if (!this.validateEmail(email)) {
-            alert('请输入有效的邮箱地址');
+            alert('璇疯緭鍏ユ湁鏁堢殑閭鍦板潃');
             return;
         }
         
         this.login(email, password);
     }
 
-    // 执行登录逻辑
+    // 鎵ц鐧诲綍閫昏緫
     login(email, password) {
         fetch('/api/login', {
             method: 'POST',
@@ -223,23 +217,21 @@ class AuthSystem {
             }
         })
         .then(user => {
-            // 登录成功，更新UI
+            // 鐧诲綍鎴愬姛锛屾洿鏂癠I
             this.closeModal('login');
             // Update the UI to show the user is logged in
             this.updateUIAfterLogin(user);
-<<<<<<< HEAD
-=======
             if (!user.is_verified && !user.is_admin) {
                 alert('您已登录，但邮箱尚未验证。\n\n您暂时不能上传猫咪信息或进行某些操作。\n请前往邮箱完成验证，或联系管理员。');
             }
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
+
         })
         .catch(error => {
-            alert(error.error || '登录失败');
+            alert(error.error || '鐧诲綍澶辫触');
         });
     }
 
-    // 更新UI显示登录状态
+    // 鏇存柊UI鏄剧ず鐧诲綍鐘舵€?
     updateUIAfterLogin(user) {
         // Hide login/register buttons
         const loginBtn = document.getElementById('loginBtn');
@@ -252,22 +244,19 @@ class AuthSystem {
         
         // Show upload button
         const uploadBtn = document.getElementById('uploadCatBtn');
-<<<<<<< HEAD
-        if (uploadBtn) uploadBtn.style.display = 'inline-block';
-=======
-        if (uploadBtn) {
+if (uploadBtn) {
             if (user.is_verified || user.is_admin) {
                 uploadBtn.style.display = 'inline-block';
             } else {
                 uploadBtn.style.display = 'none';
             }
         }
->>>>>>> c92defc (Done functions like apply, messages and email verifications. Integrated with resend.com API)
+
         
         // Show messages button
         const messagesBtn = document.createElement('button');
         messagesBtn.id = 'messagesBtn';
-        messagesBtn.textContent = '消息中心';
+        messagesBtn.textContent = '娑堟伅涓績';
         messagesBtn.style.marginLeft = '10px';
         messagesBtn.addEventListener('click', () => {
             window.location.href = '/messages';
@@ -291,8 +280,8 @@ class AuthSystem {
         const userInfo = document.createElement('div');
         userInfo.className = 'user-info';
         userInfo.innerHTML = `
-            <span>欢迎, ${user.name}</span>
-            <button id="logoutBtn">退出</button>
+            <span>娆㈣繋, ${user.name}</span>
+            <button id="logoutBtn">閫€鍑?/button>
         `;
         headerContainer.appendChild(userInfo);
         
@@ -300,7 +289,7 @@ class AuthSystem {
         document.getElementById('logoutBtn').addEventListener('click', () => this.logout());
     }
 
-    // 用户退出
+    // 鐢ㄦ埛閫€鍑?
     logout() {
         fetch('/api/logout', {
             method: 'POST'
@@ -328,7 +317,7 @@ class AuthSystem {
     }
 }
 
-// 页面加载完成后初始化认证系统
+// 椤甸潰鍔犺浇瀹屾垚鍚庡垵濮嬪寲璁よ瘉绯荤粺
 document.addEventListener('DOMContentLoaded', () => {
     window.authSystem = new AuthSystem();
 });
