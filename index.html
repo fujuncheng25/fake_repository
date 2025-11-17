@@ -98,6 +98,53 @@
                 <button type="submit">登录</button>
             </form>
             <p>还没有账户？<a href="#" id="showRegister">立即注册</a></p>
+            <p><a href="#" id="showForgotPassword">忘记密码？</a></p>
+        </div>
+    </div>
+
+    <!-- 忘记密码模态框 -->
+    <div id="forgotPasswordModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>找回密码</h2>
+            <form id="forgotPasswordForm">
+                <div class="form-group">
+                    <label for="forgotPasswordEmail">邮箱地址:</label>
+                    <input type="email" id="forgotPasswordEmail" required>
+                    <small style="color: #666; display: block; margin-top: 5px;">我们将向您的邮箱发送一个6位验证码</small>
+                </div>
+                <button type="submit">发送验证码</button>
+                <div id="forgotPasswordStatus" style="margin-top: 10px; padding: 10px; display: none; border-radius: 4px;"></div>
+            </form>
+            <p><a href="#" id="showLoginFromForgot">返回登录</a></p>
+        </div>
+    </div>
+
+    <!-- 重置密码模态框 -->
+    <div id="resetPasswordModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>重置密码</h2>
+            <form id="resetPasswordForm">
+                <input type="hidden" id="resetPasswordEmail">
+                <div class="form-group">
+                    <label for="resetPasswordCode">验证码:</label>
+                    <input type="text" id="resetPasswordCode" maxlength="6" pattern="[0-9]{6}" placeholder="请输入6位验证码" required>
+                    <small style="color: #666; display: block; margin-top: 5px;">请输入发送到您邮箱的6位验证码</small>
+                </div>
+                <div class="form-group">
+                    <label for="resetPasswordNew">新密码:</label>
+                    <input type="password" id="resetPasswordNew" required>
+                    <small style="color: #666; display: block; margin-top: 5px;">密码至少8位，包含字母和数字</small>
+                </div>
+                <div class="form-group">
+                    <label for="resetPasswordConfirm">确认新密码:</label>
+                    <input type="password" id="resetPasswordConfirm" required>
+                </div>
+                <button type="submit">重置密码</button>
+                <div id="resetPasswordStatus" style="margin-top: 10px; padding: 10px; display: none; border-radius: 4px;"></div>
+            </form>
+            <p><a href="#" id="showForgotFromReset">重新发送验证码</a></p>
         </div>
     </div>
 

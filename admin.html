@@ -786,6 +786,55 @@
             </div>
 
             <div class="admin-section">
+                <h2>管理员登录链接</h2>
+                <div class="admin-content">
+                    <p>生成单次使用的管理员登录链接。管理员账户无法使用密码登录，必须使用生成的登录链接。</p>
+                    <div style="margin: 20px 0;">
+                        <label for="loginLinkExpires" style="display: block; margin-bottom: 10px; font-weight: bold;">
+                            链接有效期（小时）:
+                        </label>
+                        <input 
+                            type="number" 
+                            id="loginLinkExpires" 
+                            value="24"
+                            min="1"
+                            max="168"
+                            style="width: 100%; max-width: 300px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                        />
+                        <button id="generateLoginLinkBtn" class="btn btn-primary" style="margin-left: 10px;">生成登录链接</button>
+                    </div>
+                    <div id="loginLinkResult" style="margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-radius: 4px; display: none;">
+                        <h3 style="margin-top: 0;">生成的登录链接：</h3>
+                        <p style="word-break: break-all; font-family: monospace; background-color: white; padding: 10px; border-radius: 4px;">
+                            <span id="loginLinkUrl"></span>
+                        </p>
+                        <button id="copyLoginLinkBtn" class="btn btn-secondary">复制链接</button>
+                        <p style="margin-top: 10px; color: #666; font-size: 12px;">
+                            <strong>注意：</strong>此链接只能使用一次，使用后立即失效。请妥善保管。
+                        </p>
+                    </div>
+                    <div style="margin-top: 30px;">
+                        <h3>最近的登录链接</h3>
+                        <div class="table-wrapper">
+                            <table class="data-table" id="loginTokensTable">
+                                <thead>
+                                    <tr>
+                                        <th>创建时间</th>
+                                        <th>创建者</th>
+                                        <th>过期时间</th>
+                                        <th>状态</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="4" style="text-align:center;">正在加载...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-section">
                 <h2>数据库可视化</h2>
                 <div class="admin-content">
                     <div class="panel-card" style="margin-bottom: 20px;">
@@ -873,6 +922,75 @@
 
     <script>
         // Check if user is admin
+        function generateAdminLoginLink() {
+            const expiresInHours = parseInt(document.getElementById('loginLinkExpires').value) || 24;
+            
+            fetch('/api/admin/generate-login-link', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ expires_in_hours: expiresInHours }),
+                credentials: 'include'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.login_url) {
+                    document.getElementById('loginLinkUrl').textContent = data.login_url;
+                    document.getElementById('loginLinkResult').style.display = 'block';
+                    loadAdminLoginTokens();
+                } else {
+                    alert(data.error || '生成登录链接失败');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('生成登录链接失败，请重试');
+            });
+        }
+
+        function copyLoginLink() {
+            const url = document.getElementById('loginLinkUrl').textContent;
+            navigator.clipboard.writeText(url).then(() => {
+                alert('链接已复制到剪贴板');
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                alert('复制失败，请手动复制');
+            });
+        }
+
+        function loadAdminLoginTokens() {
+            fetch('/api/admin/login-tokens', {
+                credentials: 'include'
+            })
+            .then(response => response.json())
+            .then(tokens => {
+                const tbody = document.querySelector('#loginTokensTable tbody');
+                if (tokens.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">暂无登录链接</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = tokens.map(token => {
+                    const status = token.used ? '已使用' : (token.expired ? '已过期' : '有效');
+                    const statusClass = token.used ? 'status-rejected' : (token.expired ? 'status-pending' : 'status-approved');
+                    return `
+                        <tr>
+                            <td>${new Date(token.created_at).toLocaleString('zh-CN')}</td>
+                            <td>${token.created_by_name || token.created_by_email || 'Unknown'}</td>
+                            <td>${new Date(token.expires_at).toLocaleString('zh-CN')}</td>
+                            <td><span class="status-badge ${statusClass}">${status}</span></td>
+                        </tr>
+                    `;
+                }).join('');
+            })
+            .catch(error => {
+                console.error('Error loading login tokens:', error);
+                const tbody = document.querySelector('#loginTokensTable tbody');
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: red;">加载失败</td></tr>';
+            });
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             checkAdminAccess();
             loadDashboardData();
@@ -893,6 +1011,16 @@
             document.getElementById('saveFromEmailBtn').addEventListener('click', saveResendFromEmail);
             document.getElementById('saveBaseUrlBtn').addEventListener('click', saveBaseUrl);
             document.getElementById('testApiKeyBtn').addEventListener('click', testResendApiKey);
+            
+            const generateLoginLinkBtn = document.getElementById('generateLoginLinkBtn');
+            if (generateLoginLinkBtn) {
+                generateLoginLinkBtn.addEventListener('click', generateAdminLoginLink);
+            }
+            const copyLoginLinkBtn = document.getElementById('copyLoginLinkBtn');
+            if (copyLoginLinkBtn) {
+                copyLoginLinkBtn.addEventListener('click', copyLoginLink);
+            }
+            loadAdminLoginTokens();
 
             const catProfileForm = document.getElementById('catProfileForm');
             if (catProfileForm) {

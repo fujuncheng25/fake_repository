@@ -28,7 +28,7 @@ from backend.cat_recognition import (
     summarize_embeddings,
 )
 
-PORT = 40276
+PORT = 40277
 HOST = "0.0.0.0"
 DB_PATH = "data/cats.db"
 
@@ -186,6 +186,39 @@ class DatabaseManager:
             )
         '''
         )
+
+        cursor.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS admin_login_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token TEXT UNIQUE NOT NULL,
+                created_by INTEGER NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                used BOOLEAN DEFAULT 0,
+                used_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (created_by) REFERENCES users (id)
+            )
+        '''
+        )
+
+        cursor.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token TEXT UNIQUE NOT NULL,
+                code TEXT NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                used BOOLEAN DEFAULT 0,
+                used_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        '''
+        )
+
+        self._ensure_column(cursor, 'users', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
 
         self._initialize_content_defaults(cursor)
         self._initialize_admin_user(cursor)
@@ -559,6 +592,237 @@ class DatabaseManager:
         user = cursor.fetchone()
         conn.close()
         return dict(user) if user else None
+
+    # --- Admin login token methods ---
+    
+    def create_admin_login_token(self, created_by_user_id, expires_in_hours=24):
+        """Create a single-use admin login token"""
+        token = secrets.token_urlsafe(32)
+        expires_at = time.time() + (expires_in_hours * 3600)
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO admin_login_tokens (token, created_by, expires_at)
+                VALUES (?, ?, datetime(?, 'unixepoch'))
+            ''', (token, created_by_user_id, expires_at))
+            conn.commit()
+            result = token
+        except sqlite3.IntegrityError:
+            # Token collision (extremely unlikely), retry once
+            token = secrets.token_urlsafe(32)
+            cursor.execute('''
+                INSERT INTO admin_login_tokens (token, created_by, expires_at)
+                VALUES (?, ?, datetime(?, 'unixepoch'))
+            ''', (token, created_by_user_id, expires_at))
+            conn.commit()
+            result = token
+        finally:
+            conn.close()
+        return result
+    
+    def validate_and_use_admin_token(self, token):
+        """Validate and mark an admin login token as used. Returns user_id if valid, None otherwise."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Check if token exists, is not used, and not expired
+        cursor.execute('''
+            SELECT t.*, u.is_admin
+            FROM admin_login_tokens t
+            JOIN users u ON t.created_by = u.id
+            WHERE t.token = ? 
+            AND t.used = 0 
+            AND datetime(t.expires_at) > datetime('now')
+            AND u.is_admin = 1
+        ''', (token,))
+        
+        token_record = cursor.fetchone()
+        
+        if token_record:
+            # Mark token as used
+            cursor.execute('''
+                UPDATE admin_login_tokens 
+                SET used = 1, used_at = CURRENT_TIMESTAMP 
+                WHERE token = ?
+            ''', (token,))
+            conn.commit()
+            user_id = token_record['created_by']
+        else:
+            user_id = None
+        
+        conn.close()
+        return user_id
+    
+    def get_admin_login_tokens(self, limit=50):
+        """Get recent admin login tokens (admin only)"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 
+                t.id,
+                t.token,
+                t.expires_at,
+                t.used,
+                t.used_at,
+                t.created_at,
+                u.name as created_by_name,
+                u.email as created_by_email
+            FROM admin_login_tokens t
+            JOIN users u ON t.created_by = u.id
+            ORDER BY t.created_at DESC
+            LIMIT ?
+        ''', (limit,))
+        tokens = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return tokens
+    
+    # --- User profile and password methods ---
+    
+    def update_user_password(self, user_id, new_password_hash):
+        """Update user password by hash"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE users 
+            SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (new_password_hash, user_id))
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
+    
+    def update_user_profile(self, user_id, name=None, email=None):
+        """Update user profile information"""
+        updates = []
+        values = []
+        
+        if name is not None:
+            updates.append("name = ?")
+            values.append(name)
+        if email is not None:
+            updates.append("email = ?")
+            values.append(email)
+        
+        if not updates:
+            return False
+        
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        values.append(user_id)
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(f'''
+                UPDATE users 
+                SET {', '.join(updates)}
+                WHERE id = ?
+            ''', values)
+            success = cursor.rowcount > 0
+            conn.commit()
+        except sqlite3.IntegrityError:
+            # Email already exists
+            success = False
+        finally:
+            conn.close()
+        return success
+    
+    # --- Password reset methods ---
+    
+    def create_password_reset_token(self, user_id, expires_in_hours=1):
+        """Create a password reset token with a 6-digit code"""
+        token = secrets.token_urlsafe(32)
+        # Generate a 6-digit verification code
+        code = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+        expires_at = time.time() + (expires_in_hours * 3600)
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO password_reset_tokens (user_id, token, code, expires_at)
+                VALUES (?, ?, ?, datetime(?, 'unixepoch'))
+            ''', (user_id, token, code, expires_at))
+            conn.commit()
+            result = (token, code)
+        except sqlite3.IntegrityError:
+            # Token collision (extremely unlikely), retry once
+            token = secrets.token_urlsafe(32)
+            code = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+            cursor.execute('''
+                INSERT INTO password_reset_tokens (user_id, token, code, expires_at)
+                VALUES (?, ?, ?, datetime(?, 'unixepoch'))
+            ''', (user_id, token, code, expires_at))
+            conn.commit()
+            result = (token, code)
+        finally:
+            conn.close()
+        return result
+    
+    def validate_password_reset_code(self, email, code):
+        """Validate password reset code. Returns (user_id, token) if valid, (None, None) otherwise."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Find user by email and validate code
+        cursor.execute('''
+            SELECT prt.*, u.id as user_id
+            FROM password_reset_tokens prt
+            JOIN users u ON prt.user_id = u.id
+            WHERE u.email = ? 
+            AND prt.code = ?
+            AND prt.used = 0 
+            AND datetime(prt.expires_at) > datetime('now')
+            ORDER BY prt.created_at DESC
+            LIMIT 1
+        ''', (email, code))
+        
+        token_record = cursor.fetchone()
+        
+        if token_record:
+            user_id = token_record['user_id']
+            token = token_record['token']
+        else:
+            user_id = None
+            token = None
+        
+        conn.close()
+        return (user_id, token)
+    
+    def use_password_reset_token(self, token):
+        """Mark a password reset token as used"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE password_reset_tokens 
+            SET used = 1, used_at = CURRENT_TIMESTAMP 
+            WHERE token = ? AND used = 0
+        ''', (token,))
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
+    
+    def get_user_password_reset_tokens(self, user_id):
+        """Get all password reset tokens for a user (for admin/debugging)"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, token, code, expires_at, used, used_at, created_at
+            FROM password_reset_tokens
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT 10
+        ''', (user_id,))
+        tokens = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return tokens
 
     # --- Cat recognition helpers -------------------------------------------------
 
@@ -976,6 +1240,68 @@ def send_verification_email(email, name, token):
         print(f"Error sending email: {str(e)}")
         return False
 
+def send_password_reset_email(email, name, code):
+    """Send password reset verification code via Resend API"""
+    api_key = db.get_setting('resend_api_key')
+    if not api_key:
+        print("Warning: Resend API key not configured. Email not sent.")
+        return False
+    
+    # Get "from" email address from settings or use default
+    from_email = db.get_setting('resend_from_email') or "noreply@resend.dev"
+    
+    # Prepare email data for Resend API
+    email_data = {
+        "from": from_email,
+        "to": [email],
+        "subject": "账户密码重置验证码 - 流浪猫公益项目",
+        "html": f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #4CAF50;">密码重置请求</h2>
+                <p>亲爱的 {name}，</p>
+                <p>我们收到了您的密码重置请求。请使用以下验证码来重置您的密码：</p>
+                <div style="text-align: center; margin: 30px 0;">
+                    <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; display: inline-block;">
+                        <p style="font-size: 14px; color: #666; margin: 0 0 10px 0;">验证码</p>
+                        <p style="font-size: 32px; font-weight: bold; color: #4CAF50; letter-spacing: 8px; margin: 0; font-family: 'Courier New', monospace;">{code}</p>
+                    </div>
+                </div>
+                <p style="color: #dc3545; font-weight: bold;">此验证码有效期为1小时，请尽快使用。</p>
+                <p>如果您没有请求重置密码，请忽略此邮件。您的账户仍然是安全的。</p>
+                <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+                <p style="color: #999; font-size: 12px;">此邮件由系统自动发送，请勿回复。</p>
+            </div>
+        </body>
+        </html>
+        """
+    }
+    
+    # Send request to Resend API
+    try:
+        req = urllib.request.Request(
+            'https://api.resend.com/emails',
+            data=json.dumps(email_data).encode('utf-8'),
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json'
+            }
+        )
+        response = urllib.request.urlopen(req)
+        if response.getcode() == 200:
+            return True
+        else:
+            print(f"Resend API error: {response.getcode()}")
+            return False
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        print(f"Resend API HTTP error: {e.code} - {error_body}")
+        return False
+    except Exception as e:
+        print(f"Error sending email: {str(e)}")
+        return False
+
 class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         # 添加CORS头部
@@ -1091,6 +1417,26 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(400)
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": "Invalid user ID"}).encode())
+        elif self.path == '/api/admin/generate-login-link':
+            self.handle_generate_admin_login_link()
+        elif self.path == '/api/user/change-password':
+            self.handle_change_password()
+        elif self.path == '/api/user/profile':
+            self.handle_update_user_profile()
+        elif self.path == '/api/user/forgot-password':
+            self.handle_forgot_password()
+        elif self.path == '/api/user/verify-reset-code':
+            self.handle_verify_reset_code()
+        elif self.path == '/api/user/reset-password':
+            self.handle_reset_password()
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def do_PUT(self):
+        """Handle PUT requests"""
+        if self.path == '/api/user/profile':
+            self.handle_update_user_profile()
         else:
             self.send_response(404)
             self.end_headers()
@@ -1142,6 +1488,18 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.handle_get_reference_images()
             elif self.path == '/api/admin/cat-recognition/events':
                 self.handle_get_recognition_events()
+            elif self.path == '/api/admin/login-tokens':
+                self.handle_get_admin_login_tokens()
+            elif self.path.startswith('/api/admin/login'):
+                # Handle admin login via token
+                query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                token = query_params.get('token', [None])[0]
+                if token:
+                    self.handle_admin_login_with_token(token)
+                else:
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Token required"}).encode())
             else:
                 self.send_response(404)
                 self.end_headers()
@@ -1188,6 +1546,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.path = '/contact.html'
             elif path == '/content-management':
                 self.path = '/content-management.html'
+            elif path == '/profile':
+                self.path = '/profile.html'
             
             # 尝试提供静态文件
             try:
@@ -1220,7 +1580,20 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
         
         user = db.get_user_by_email(email)
-        if user and user['password_hash'] == hashlib.sha256(password.encode()).hexdigest():
+        if not user:
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid credentials"}).encode())
+            return
+        
+        # Prevent admin login via password - admins must use single-use login links
+        if user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin accounts cannot login with password. Please use a single-use admin login link."}).encode())
+            return
+        
+        if user['password_hash'] == hashlib.sha256(password.encode()).hexdigest():
             # Create auth token
             token = hashlib.sha256(f"{email}{user['password_hash']}".encode()).hexdigest()
             
@@ -2567,6 +2940,367 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
     
+    def handle_generate_admin_login_link(self):
+        """Generate a single-use admin login link (admin only)"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+        
+        content_length = int(self.headers.get('Content-Length', 0) or 0)
+        expires_in_hours = 24  # Default 24 hours
+        
+        if content_length > 0:
+            post_data = self.rfile.read(content_length)
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                expires_in_hours = data.get('expires_in_hours', 24)
+            except:
+                pass
+        
+        try:
+            token = db.create_admin_login_token(user['id'], expires_in_hours)
+            
+            # Get base URL from settings or use default
+            base_url = db.get_setting('base_url') or f"http://localhost:{PORT}"
+            login_url = f"{base_url}/api/admin/login?token={token}"
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "token": token,
+                "login_url": login_url,
+                "expires_in_hours": expires_in_hours,
+                "message": "Admin login link generated successfully"
+            }).encode())
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+    
+    def handle_get_admin_login_tokens(self):
+        """Get list of admin login tokens (admin only)"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+        
+        try:
+            tokens = db.get_admin_login_tokens(50)
+            # Check if tokens are expired or still valid
+            from datetime import datetime
+            now = datetime.now()
+            for token in tokens:
+                token['used'] = bool(token['used'])
+                expires_at = datetime.strptime(token['expires_at'], '%Y-%m-%d %H:%M:%S') if isinstance(token['expires_at'], str) else token['expires_at']
+                token['expired'] = expires_at < now
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(tokens).encode())
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+    
+    def handle_admin_login_with_token(self, token):
+        """Authenticate admin using a single-use token"""
+        try:
+            user_id = db.validate_and_use_admin_token(token)
+            
+            if user_id:
+                user = db.get_user_by_id(user_id)
+                if user and user.get('is_admin'):
+                    # Create auth token
+                    auth_token = hashlib.sha256(f"{user['email']}{user['password_hash']}".encode()).hexdigest()
+                    
+                    # Set cookies
+                    self.send_response(200)
+                    self.send_header('Set-Cookie', f"user_email={user['email']}; Path=/")
+                    self.send_header('Set-Cookie', f"user_token={auth_token}; Path=/")
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    
+                    response = {
+                        "id": user['id'],
+                        "name": user['name'],
+                        "email": user['email'],
+                        "is_admin": True,
+                        "is_verified": bool(user.get('is_verified', False)),
+                        "message": "Admin login successful"
+                    }
+                    self.wfile.write(json.dumps(response).encode())
+                else:
+                    self.send_response(401)
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Invalid admin token"}).encode())
+            else:
+                self.send_response(401)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid or expired token"}).encode())
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+    
+    def handle_change_password(self):
+        """Handle user password change"""
+        user = self.get_current_user()
+        if not user:
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Authentication required"}).encode())
+            return
+        
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
+        current_password = data.get('current_password')
+        new_password = data.get('new_password')
+        confirm_password = data.get('confirm_password')
+        
+        if not current_password or not new_password or not confirm_password:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "All password fields are required"}).encode())
+            return
+        
+        # Verify current password
+        current_password_hash = hashlib.sha256(current_password.encode()).hexdigest()
+        if user['password_hash'] != current_password_hash:
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Current password is incorrect"}).encode())
+            return
+        
+        # Validate new password
+        if new_password != confirm_password:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "New passwords do not match"}).encode())
+            return
+        
+        if len(new_password) < 8:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Password must be at least 8 characters"}).encode())
+            return
+        
+        # Update password
+        new_password_hash = hashlib.sha256(new_password.encode()).hexdigest()
+        success = db.update_user_password(user['id'], new_password_hash)
+        
+        if success:
+            # Invalidate current session token since password changed
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"message": "Password updated successfully. Please login again."}).encode())
+        else:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Failed to update password"}).encode())
+    
+    def handle_update_user_profile(self):
+        """Handle user profile update"""
+        user = self.get_current_user()
+        if not user:
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Authentication required"}).encode())
+            return
+        
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
+        name = data.get('name')
+        email = data.get('email')
+        
+        if not name and not email:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "At least one field (name or email) is required"}).encode())
+            return
+        
+        # If email is being changed, validate it
+        if email and email != user['email']:
+            # Check if email already exists
+            existing_user = db.get_user_by_email(email)
+            if existing_user and existing_user['id'] != user['id']:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Email already in use"}).encode())
+                return
+        
+        # Update profile
+        success = db.update_user_profile(user['id'], name=name, email=email)
+        
+        if success:
+            # Get updated user
+            updated_user = db.get_user_by_id(user['id'])
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "message": "Profile updated successfully",
+                "user": {
+                    "id": updated_user['id'],
+                    "name": updated_user['name'],
+                    "email": updated_user['email']
+                }
+            }).encode())
+        else:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Failed to update profile. Email may already be in use."}).encode())
+    
+    def handle_forgot_password(self):
+        """Handle forgot password request - sends verification code to email"""
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
+        email = data.get('email')
+        
+        if not email:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Email is required"}).encode())
+            return
+        
+        # Find user by email
+        user = db.get_user_by_email(email)
+        
+        # Always return success to prevent email enumeration
+        # But only send email if user exists
+        if user:
+            # Create password reset token
+            token, code = db.create_password_reset_token(user['id'], expires_in_hours=1)
+            
+            # Send email with verification code
+            email_sent = send_password_reset_email(email, user['name'], code)
+            
+            if email_sent:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "message": "If an account exists with this email, a verification code has been sent.",
+                    "email_sent": True
+                }).encode())
+            else:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "error": "Failed to send email. Please try again later.",
+                    "email_sent": False
+                }).encode())
+        else:
+            # User doesn't exist, but return same success message for security
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "message": "If an account exists with this email, a verification code has been sent.",
+                "email_sent": True
+            }).encode())
+    
+    def handle_verify_reset_code(self):
+        """Verify password reset code"""
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
+        email = data.get('email')
+        code = data.get('code')
+        
+        if not email or not code:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Email and verification code are required"}).encode())
+            return
+        
+        # Validate code
+        user_id, token = db.validate_password_reset_code(email, code)
+        
+        if user_id and token:
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "message": "Verification code is valid",
+                "token": token,  # Return token for password reset
+                "valid": True
+            }).encode())
+        else:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "error": "Invalid or expired verification code",
+                "valid": False
+            }).encode())
+    
+    def handle_reset_password(self):
+        """Reset password using verification code"""
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
+        email = data.get('email')
+        code = data.get('code')
+        new_password = data.get('new_password')
+        confirm_password = data.get('confirm_password')
+        
+        if not email or not code or not new_password:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Email, verification code, and new password are required"}).encode())
+            return
+        
+        if new_password != confirm_password:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "New passwords do not match"}).encode())
+            return
+        
+        if len(new_password) < 8:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Password must be at least 8 characters"}).encode())
+            return
+        
+        # Validate code and get token
+        user_id, token = db.validate_password_reset_code(email, code)
+        
+        if not user_id or not token:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid or expired verification code"}).encode())
+            return
+        
+        # Update password
+        new_password_hash = hashlib.sha256(new_password.encode()).hexdigest()
+        success = db.update_user_password(user_id, new_password_hash)
+        
+        if success:
+            # Mark token as used
+            db.use_password_reset_token(token)
+            
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "message": "Password reset successfully. Please login with your new password."
+            }).encode())
+        else:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Failed to reset password"}).encode())
+    
     def guess_type(self, path):
         # 使用mimetypes模块猜测MIME类型
         mimetype, _ = mimetypes.guess_type(path)
@@ -2576,6 +3310,58 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
 # 设置当前工作目录
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+# Generate admin login link on startup
+def generate_startup_admin_login_link():
+    """Generate and display admin login link on server startup"""
+    try:
+        # Find first admin user
+        admin_user = None
+        users = db.get_all_users()
+        for user in users:
+            # Check if user is admin (handle both boolean and integer)
+            is_admin = user.get('is_admin')
+            if is_admin or is_admin == 1:
+                # Get full user data by ID
+                admin_user = db.get_user_by_id(user['id'])
+                break
+        
+        # If not found in users list, try by default admin email
+        if not admin_user:
+            admin_user = db.get_user_by_email('admin@cats.com')
+        
+        if not admin_user or not (admin_user.get('is_admin') or admin_user.get('is_admin') == 1):
+            print("\n⚠️  警告: 未找到管理员账户")
+            print("   服务器将无法使用管理员功能")
+            return
+        
+        # Generate admin login token (expires in 24 hours)
+        token = db.create_admin_login_token(admin_user['id'], expires_in_hours=24)
+        
+        # Get base URL from settings or use default
+        base_url = db.get_setting('base_url') or f"http://{HOST}:{PORT}"
+        login_url = f"{base_url}/api/admin/login?token={token}"
+        
+        # Display admin login link in console
+        print("\n" + "="*80)
+        print("🔐 管理员登录链接 (Admin Login Link)")
+        print("="*80)
+        print(f"\n👤 管理员账户 (Admin User): {admin_user['name']} ({admin_user['email']})")
+        print(f"⏰ 有效期 (Expires): 24小时 (24 hours)")
+        print(f"\n📋 登录链接 (Login Link):")
+        print("-"*80)
+        print(login_url)
+        print("-"*80)
+        print("\n💡 提示: 此链接只能使用一次，使用后立即失效")
+        print("   Note: This link is single-use and will expire after first use")
+        print("="*80 + "\n")
+        
+    except Exception as e:
+        print(f"\n⚠️  警告: 生成管理员登录链接时出错: {str(e)}")
+        print("   Warning: Error generating admin login link:", str(e))
+
+# Generate admin login link on startup
+generate_startup_admin_login_link()
 
 # 启动服务器
 with socketserver.TCPServer((HOST, PORT), CustomHTTPRequestHandler) as httpd:

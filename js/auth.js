@@ -39,9 +39,14 @@ class AuthSystem {
         const registerModal = document.getElementById('registerModal');
         const showRegisterLink = document.getElementById('showRegister');
         const showLoginLink = document.getElementById('showLogin');
+        const showForgotPasswordLink = document.getElementById('showForgotPassword');
+        const showLoginFromForgotLink = document.getElementById('showLoginFromForgot');
+        const showForgotFromResetLink = document.getElementById('showForgotFromReset');
         const closeButtons = document.querySelectorAll('.close');
         const loginForm = document.getElementById('loginForm');
         const registerForm = document.getElementById('registerForm');
+        const forgotPasswordForm = document.getElementById('forgotPasswordForm');
+        const resetPasswordForm = document.getElementById('resetPasswordForm');
         const joinUsBtn = document.getElementById('joinUsBtn');
 
         // 绑定按钮点击事件
@@ -62,23 +67,56 @@ class AuthSystem {
             this.openModal('login');
         });
         
+        if (showForgotPasswordLink) showForgotPasswordLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.closeModal('login');
+            this.openModal('forgotPassword');
+        });
+        
+        if (showLoginFromForgotLink) showLoginFromForgotLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.closeModal('forgotPassword');
+            this.openModal('login');
+        });
+        
+        if (showForgotFromResetLink) showForgotFromResetLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            const email = document.getElementById('resetPasswordEmail').value;
+            if (email) {
+                document.getElementById('forgotPasswordEmail').value = email;
+            }
+            this.closeModal('resetPassword');
+            this.openModal('forgotPassword');
+        });
+        
         // 绑定关闭按钮事件
         closeButtons.forEach(button => {
             button.addEventListener('click', () => {
                 const modal = button.closest('.modal');
-                if (modal) this.closeModal(modal.id === 'loginModal' ? 'login' : 'register');
+                if (modal) {
+                    if (modal.id === 'loginModal') this.closeModal('login');
+                    else if (modal.id === 'registerModal') this.closeModal('register');
+                    else if (modal.id === 'forgotPasswordModal') this.closeModal('forgotPassword');
+                    else if (modal.id === 'resetPasswordModal') this.closeModal('resetPassword');
+                }
             });
         });
         
         // 鐐瑰嚮妯℃€佹澶栭儴鍏抽棴
+        const forgotPasswordModal = document.getElementById('forgotPasswordModal');
+        const resetPasswordModal = document.getElementById('resetPasswordModal');
         window.addEventListener('click', (e) => {
             if (e.target === loginModal) this.closeModal('login');
             if (e.target === registerModal) this.closeModal('register');
+            if (e.target === forgotPasswordModal) this.closeModal('forgotPassword');
+            if (e.target === resetPasswordModal) this.closeModal('resetPassword');
         });
         
         // 绑定表单提交事件
         if (loginForm) loginForm.addEventListener('submit', (e) => this.handleLogin(e));
         if (registerForm) registerForm.addEventListener('submit', (e) => this.handleRegister(e));
+        if (forgotPasswordForm) forgotPasswordForm.addEventListener('submit', (e) => this.handleForgotPassword(e));
+        if (resetPasswordForm) resetPasswordForm.addEventListener('submit', (e) => this.handleResetPassword(e));
     }
 
     openModal(type) {
@@ -86,6 +124,10 @@ class AuthSystem {
             document.getElementById('loginModal').style.display = 'block';
         } else if (type === 'register') {
             document.getElementById('registerModal').style.display = 'block';
+        } else if (type === 'forgotPassword') {
+            document.getElementById('forgotPasswordModal').style.display = 'block';
+        } else if (type === 'resetPassword') {
+            document.getElementById('resetPasswordModal').style.display = 'block';
         }
     }
 
@@ -94,6 +136,10 @@ class AuthSystem {
             document.getElementById('loginModal').style.display = 'none';
         } else if (type === 'register') {
             document.getElementById('registerModal').style.display = 'none';
+        } else if (type === 'forgotPassword') {
+            document.getElementById('forgotPasswordModal').style.display = 'none';
+        } else if (type === 'resetPassword') {
+            document.getElementById('resetPasswordModal').style.display = 'none';
         }
     }
 
@@ -126,12 +172,12 @@ class AuthSystem {
         }
         
         if (!this.validateEmail(email)) {
-            alert('璇疯緭鍏ユ湁鏁堢殑閭鍦板潃');
+            alert('请输入有效的邮箱名或密码');
             return;
         }
         
         if (!this.validatePassword(password)) {
-            alert('瀵嗙爜鑷冲皯8浣嶏紝涓斿寘鍚瓧姣嶅拰鏁板瓧');
+            alert('请输入有效的邮箱名或密码');
             return;
         }
         
@@ -190,7 +236,7 @@ class AuthSystem {
         }
         
         if (!this.validateEmail(email)) {
-            alert('璇疯緭鍏ユ湁鏁堢殑閭鍦板潃');
+            alert('请输入有效的邮箱名或密码');
             return;
         }
         
@@ -256,7 +302,7 @@ if (uploadBtn) {
         // Show messages button
         const messagesBtn = document.createElement('button');
         messagesBtn.id = 'messagesBtn';
-        messagesBtn.textContent = '娑堟伅涓績';
+        messagesBtn.textContent = '消息中心';
         messagesBtn.style.marginLeft = '10px';
         messagesBtn.addEventListener('click', () => {
             window.location.href = '/messages';
@@ -280,8 +326,9 @@ if (uploadBtn) {
         const userInfo = document.createElement('div');
         userInfo.className = 'user-info';
         userInfo.innerHTML = `
-            <span>娆㈣繋, ${user.name}</span>
-            <button id="logoutBtn">閫€鍑?/button>
+            <span>欢迎, ${user.name}</span>
+            <a href="/profile" style="margin: 0 10px; color: #4CAF50; text-decoration: none;">个人资料</a>
+            <button id="logoutBtn">退出</button>
         `;
         headerContainer.appendChild(userInfo);
         
@@ -313,6 +360,155 @@ if (uploadBtn) {
             // Remove user info
             const userInfo = document.querySelector('.user-info');
             if (userInfo) userInfo.remove();
+        });
+    }
+
+    // 忘记密码
+    handleForgotPassword(e) {
+        e.preventDefault();
+        
+        const email = document.getElementById('forgotPasswordEmail').value.trim();
+        const statusDiv = document.getElementById('forgotPasswordStatus');
+        
+        if (!email) {
+            statusDiv.style.display = 'block';
+            statusDiv.style.backgroundColor = '#f8d7da';
+            statusDiv.style.color = '#721c24';
+            statusDiv.textContent = '请输入邮箱地址';
+            return;
+        }
+        
+        if (!this.validateEmail(email)) {
+            statusDiv.style.display = 'block';
+            statusDiv.style.backgroundColor = '#f8d7da';
+            statusDiv.style.color = '#721c24';
+            statusDiv.textContent = '请输入有效的邮箱地址';
+            return;
+        }
+        
+        statusDiv.style.display = 'block';
+        statusDiv.style.backgroundColor = '#d1ecf1';
+        statusDiv.style.color = '#0c5460';
+        statusDiv.textContent = '正在发送验证码...';
+        
+        fetch('/api/user/forgot-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email: email })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.message && data.email_sent) {
+                statusDiv.style.backgroundColor = '#d4edda';
+                statusDiv.style.color = '#155724';
+                statusDiv.textContent = '验证码已发送到您的邮箱，请查收。';
+                // Store email and show reset password modal
+                document.getElementById('resetPasswordEmail').value = email;
+                setTimeout(() => {
+                    this.closeModal('forgotPassword');
+                    this.openModal('resetPassword');
+                }, 1500);
+            } else {
+                statusDiv.style.backgroundColor = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                statusDiv.textContent = data.error || '发送失败，请稍后重试';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            statusDiv.style.backgroundColor = '#f8d7da';
+            statusDiv.style.color = '#721c24';
+            statusDiv.textContent = '发送失败，请稍后重试';
+        });
+    }
+
+    // 重置密码
+    handleResetPassword(e) {
+        e.preventDefault();
+        
+        const email = document.getElementById('resetPasswordEmail').value;
+        const code = document.getElementById('resetPasswordCode').value.trim();
+        const newPassword = document.getElementById('resetPasswordNew').value;
+        const confirmPassword = document.getElementById('resetPasswordConfirm').value;
+        const statusDiv = document.getElementById('resetPasswordStatus');
+        
+        statusDiv.style.display = 'none';
+        
+        if (!code || code.length !== 6) {
+            statusDiv.style.display = 'block';
+            statusDiv.style.backgroundColor = '#f8d7da';
+            statusDiv.style.color = '#721c24';
+            statusDiv.textContent = '请输入6位验证码';
+            return;
+        }
+        
+        if (!newPassword || !confirmPassword) {
+            statusDiv.style.display = 'block';
+            statusDiv.style.backgroundColor = '#f8d7da';
+            statusDiv.style.color = '#721c24';
+            statusDiv.textContent = '请填写所有字段';
+            return;
+        }
+        
+        if (newPassword !== confirmPassword) {
+            statusDiv.style.display = 'block';
+            statusDiv.style.backgroundColor = '#f8d7da';
+            statusDiv.style.color = '#721c24';
+            statusDiv.textContent = '两次输入的密码不一致';
+            return;
+        }
+        
+        if (!this.validatePassword(newPassword)) {
+            statusDiv.style.display = 'block';
+            statusDiv.style.backgroundColor = '#f8d7da';
+            statusDiv.style.color = '#721c24';
+            statusDiv.textContent = '密码至少8位，且包含字母和数字';
+            return;
+        }
+        
+        statusDiv.style.display = 'block';
+        statusDiv.style.backgroundColor = '#d1ecf1';
+        statusDiv.style.color = '#0c5460';
+        statusDiv.textContent = '正在重置密码...';
+        
+        fetch('/api/user/reset-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                email: email,
+                code: code,
+                new_password: newPassword,
+                confirm_password: confirmPassword
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.message) {
+                statusDiv.style.backgroundColor = '#d4edda';
+                statusDiv.style.color = '#155724';
+                statusDiv.textContent = data.message;
+                // Clear form and redirect to login
+                setTimeout(() => {
+                    document.getElementById('resetPasswordForm').reset();
+                    this.closeModal('resetPassword');
+                    this.openModal('login');
+                    alert('密码重置成功！请使用新密码登录。');
+                }, 1500);
+            } else {
+                statusDiv.style.backgroundColor = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                statusDiv.textContent = data.error || '密码重置失败';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            statusDiv.style.backgroundColor = '#f8d7da';
+            statusDiv.style.color = '#721c24';
+            statusDiv.textContent = '密码重置失败，请稍后重试';
         });
     }
 }
