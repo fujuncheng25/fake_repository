@@ -5,7 +5,7 @@ class AuthSystem {
     }
 
     init() {
-        // 缁戝畾浜嬩欢鐩戝惉鍣?
+        // 绑定事件监听器
         this.bindEvents();
         // Check current user status
         this.checkCurrentUser();
@@ -32,7 +32,7 @@ class AuthSystem {
     }
 
     bindEvents() {
-        // 鑾峰彇DOM鍏冪礌
+        // 获取DOM元素
         const loginBtn = document.getElementById('loginBtn');
         const registerBtn = document.getElementById('registerBtn');
         const loginModal = document.getElementById('loginModal');
@@ -44,7 +44,7 @@ class AuthSystem {
         const registerForm = document.getElementById('registerForm');
         const joinUsBtn = document.getElementById('joinUsBtn');
 
-        // 缁戝畾鎸夐挳鐐瑰嚮浜嬩欢
+        // 绑定按钮点击事件
         if (loginBtn) loginBtn.addEventListener('click', () => this.openModal('login'));
         if (registerBtn) registerBtn.addEventListener('click', () => this.openModal('register'));
         if (joinUsBtn) joinUsBtn.addEventListener('click', () => this.openModal('register'));
@@ -62,7 +62,7 @@ class AuthSystem {
             this.openModal('login');
         });
         
-        // 缁戝畾鍏抽棴鎸夐挳浜嬩欢
+        // 绑定关闭按钮事件
         closeButtons.forEach(button => {
             button.addEventListener('click', () => {
                 const modal = button.closest('.modal');
@@ -76,7 +76,7 @@ class AuthSystem {
             if (e.target === registerModal) this.closeModal('register');
         });
         
-        // 缁戝畾琛ㄥ崟鎻愪氦浜嬩欢
+        // 绑定表单提交事件
         if (loginForm) loginForm.addEventListener('submit', (e) => this.handleLogin(e));
         if (registerForm) registerForm.addEventListener('submit', (e) => this.handleRegister(e));
     }
@@ -103,14 +103,14 @@ class AuthSystem {
         return emailRegex.test(email);
     }
 
-    // 楠岃瘉瀵嗙爜寮哄害
+    // 验证密码强度
     validatePassword(password) {
-        // 鑷冲皯8浣嶏紝鍖呭惈瀛楁瘝鍜屾暟瀛?
+        // 至少8位，包含字母和数字
         const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/;
         return passwordRegex.test(password);
     }
 
-    // 鐢ㄦ埛娉ㄥ唽
+    // 用户注册
     handleRegister(e) {
         e.preventDefault();
         
@@ -140,7 +140,7 @@ class AuthSystem {
             return;
         }
         
-        // 璋冪敤API娉ㄥ唽鐢ㄦ埛
+        // 调用API注册用户
         fetch('/api/register', {
             method: 'POST',
             headers: {
@@ -177,7 +177,7 @@ class AuthSystem {
         });
     }
 
-    // 鐢ㄦ埛鐧诲綍
+    // 用户登录
     handleLogin(e) {
         e.preventDefault();
         
@@ -217,7 +217,7 @@ class AuthSystem {
             }
         })
         .then(user => {
-            // 鐧诲綍鎴愬姛锛屾洿鏂癠I
+            // 登录成功，更新UI
             this.closeModal('login');
             // Update the UI to show the user is logged in
             this.updateUIAfterLogin(user);
@@ -231,7 +231,7 @@ class AuthSystem {
         });
     }
 
-    // 鏇存柊UI鏄剧ず鐧诲綍鐘舵€?
+    // 更新UI显示登录状态
     updateUIAfterLogin(user) {
         // Hide login/register buttons
         const loginBtn = document.getElementById('loginBtn');
@@ -289,7 +289,7 @@ if (uploadBtn) {
         document.getElementById('logoutBtn').addEventListener('click', () => this.logout());
     }
 
-    // 鐢ㄦ埛閫€鍑?
+    // 用户退出
     logout() {
         fetch('/api/logout', {
             method: 'POST'
@@ -317,7 +317,7 @@ if (uploadBtn) {
     }
 }
 
-// 椤甸潰鍔犺浇瀹屾垚鍚庡垵濮嬪寲璁よ瘉绯荤粺
+// 页面加载完成后初始化认证系统
 document.addEventListener('DOMContentLoaded', () => {
     window.authSystem = new AuthSystem();
 });
