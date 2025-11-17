@@ -47,6 +47,10 @@
         <section id="cats">
             <div class="container">
                 <h2>猫咪信息</h2>
+                <div class="cat-search">
+                    <input type="text" id="catSearchInput" placeholder="输入关键字进行模糊搜索，例如“奶牛”“黑白”“温顺”等">
+                    <small>模糊匹配猫咪的名称、特征、描述信息</small>
+                </div>
                 <div class="cat-list">
                     <!-- 猫咪信息将通过JavaScript动态加载 -->
                 </div>
@@ -173,6 +177,30 @@
                 <button type="submit">注册</button>
             </form>
             <p>已有账户？<a href="#" id="showLogin">立即登录</a></p>
+        </div>
+    </div>
+
+    <!-- 领养申请模态框 -->
+    <div id="adoptionModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="closeAdoptionModal">&times;</span>
+            <h2>猫咪领养申请</h2>
+            <div class="adoption-cat-summary">
+                <p><strong>猫咪：</strong><span id="adoptionCatName">-</span></p>
+            </div>
+            <form id="adoptionForm">
+                <input type="hidden" id="adoptionCatId">
+                <div class="form-group">
+                    <label for="adoptionContact">联系方式（必填）</label>
+                    <input type="text" id="adoptionContact" placeholder="例如：手机号 / 微信 / 电子邮箱" required>
+                </div>
+                <div class="form-group">
+                    <label for="adoptionMessage">自我介绍 / 领养原因（选填）</label>
+                    <textarea id="adoptionMessage" rows="4" placeholder="简单介绍您的养宠经验、家庭情况等"></textarea>
+                </div>
+                <button type="submit">提交领养申请</button>
+                <div id="adoptionStatus" class="status-message" style="display:none;"></div>
+            </form>
         </div>
     </div>
 

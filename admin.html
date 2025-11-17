@@ -574,6 +574,14 @@
             </div>
 
             <div class="admin-section">
+                <h2>猫咪编辑工具</h2>
+                <div class="admin-content">
+                    <p>对已经提交的猫咪档案进行编辑，或使用已有参考图片重新生成哈希值。</p>
+                    <button class="admin-btn" onclick="window.location.href='/admin-cat-editor'">打开猫咪编辑器</button>
+                </div>
+            </div>
+
+            <div class="admin-section">
                 <h2>用户管理</h2>
                 <div class="admin-content">
                     <table id="usersTable">
@@ -605,6 +613,8 @@
                                 <th>猫咪</th>
                                 <th>申请人</th>
                                 <th>邮箱</th>
+                                <th>联系方式</th>
+                                <th>留言</th>
                                 <th>状态</th>
                                 <th>申请时间</th>
                                 <th>操作</th>
@@ -766,11 +776,36 @@
                             该 URL 将用于生成邮件中的验证链接，请确保以 http:// 或 https:// 开头。
                         </p>
                     </div>
+                    <div style="margin: 20px 0;">
+                        <label for="notificationFromEmail" style="display: block; margin-bottom: 10px; font-weight: bold;">
+                            通知发件邮箱:
+                        </label>
+                        <input 
+                            type="email" 
+                            id="notificationFromEmail" 
+                            placeholder="例如: alerts@yourdomain.com"
+                            style="width: 100%; max-width: 500px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                        />
+                        <p id="notificationFromEmailStatus" style="margin-top: 10px; color: #666; font-size: 14px;"></p>
+                    </div>
+                    <div style="margin: 20px 0;">
+                        <label for="notificationEmails" style="display: block; margin-bottom: 10px; font-weight: bold;">
+                            通知成员邮箱列表 (逗号或换行分隔):
+                        </label>
+                        <textarea 
+                            id="notificationEmails" 
+                            placeholder="member1@example.com, member2@example.com"
+                            style="width: 100%; max-width: 500px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; min-height: 80px;"
+                        ></textarea>
+                        <p id="notificationEmailsStatus" style="margin-top: 10px; color: #666; font-size: 14px;"></p>
+                    </div>
                     <div>
                         <button id="saveApiKeyBtn" class="btn btn-primary">保存 API 密钥</button>
                         <button id="saveFromEmailBtn" class="btn btn-primary" style="margin-left: 10px;">保存发件人邮箱</button>
                         <button id="saveBaseUrlBtn" class="btn btn-primary" style="margin-left: 10px;">保存网站 URL</button>
                         <button id="testApiKeyBtn" class="btn btn-secondary" style="margin-left: 10px;">测试连接</button>
+                        <button id="saveNotificationFromEmailBtn" class="btn btn-primary" style="margin-left: 10px;">保存通知发件邮箱</button>
+                        <button id="saveNotificationEmailsBtn" class="btn btn-primary" style="margin-left: 10px;">保存通知成员</button>
                     </div>
                     <div style="margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 4px;">
                         <h3 style="margin-top: 0;">如何获取 Resend API 密钥：</h3>
@@ -1011,6 +1046,8 @@
             document.getElementById('saveFromEmailBtn').addEventListener('click', saveResendFromEmail);
             document.getElementById('saveBaseUrlBtn').addEventListener('click', saveBaseUrl);
             document.getElementById('testApiKeyBtn').addEventListener('click', testResendApiKey);
+            document.getElementById('saveNotificationFromEmailBtn').addEventListener('click', saveNotificationFromEmail);
+            document.getElementById('saveNotificationEmailsBtn').addEventListener('click', saveNotificationEmails);
             
             const generateLoginLinkBtn = document.getElementById('generateLoginLinkBtn');
             if (generateLoginLinkBtn) {
@@ -1645,6 +1682,8 @@
                             <td>${request.cat_name}</td>
                             <td>${request.user_name}</td>
                             <td>${request.user_email}</td>
+                            <td>${request.contact_info || '—'}</td>
+                            <td>${request.message || '—'}</td>
                             <td>
                                 <span class="status-badge status-${request.status}">
                                     ${request.status === 'pending' ? '待处理' : 
@@ -1667,10 +1706,31 @@
         }
 
         function updateRequestStatus(requestId, status) {
-            // In a real implementation, this would make an API call to update the request status
-            alert(`将申请 #${requestId} 状态更新为: ${status}`);
-            // For now, just reload the data
-            loadAdoptionRequests();
+            if (!confirm(`确定将申请 #${requestId} 状态更新为「${status === 'approved' ? '已批准' : '已拒绝'}」吗？`)) {
+                return;
+            }
+            fetch(`/api/adoption_requests/${requestId}/status`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({ status })
+            })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    showActionMessage(`申请 #${requestId} 状态已更新。`, 'success');
+                    loadAdoptionRequests();
+                    loadCats();
+                } else {
+                    throw new Error(data.error || '状态更新失败');
+                }
+            })
+            .catch(error => {
+                console.error('Error updating adoption request:', error);
+                showActionMessage(error.message || '状态更新失败', 'error');
+            });
         }
 
         function approveCat(catId) {
@@ -1830,6 +1890,41 @@
                 .catch(error => {
                     console.error('Error loading base URL:', error);
                 });
+
+            fetch('/api/admin/settings/notification-from-email')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('notificationFromEmail').value = data.from_email || '';
+                    const statusEl = document.getElementById('notificationFromEmailStatus');
+                    if (data.from_email) {
+                        statusEl.textContent = `当前通知发件邮箱: ${data.from_email}`;
+                        statusEl.style.color = '#4CAF50';
+                    } else {
+                        statusEl.textContent = '未配置通知发件邮箱，将使用默认 alerts@resend.dev';
+                        statusEl.style.color = '#666';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading notification from email:', error);
+                });
+
+            fetch('/api/admin/settings/notification-emails')
+                .then(response => response.json())
+                .then(data => {
+                    const emails = (data.emails || []).join(', ');
+                    document.getElementById('notificationEmails').value = emails;
+                    const statusEl = document.getElementById('notificationEmailsStatus');
+                    if (data.emails && data.emails.length > 0) {
+                        statusEl.textContent = `当前成员数量：${data.emails.length}`;
+                        statusEl.style.color = '#4CAF50';
+                    } else {
+                        statusEl.textContent = '尚未配置通知成员邮箱';
+                        statusEl.style.color = '#666';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading notification emails:', error);
+                });
         }
 
         function saveResendApiKey() {
@@ -1909,6 +2004,62 @@
             .then(data => {
                 if (data.message) {
                     alert('网站 URL 保存成功！');
+                    loadResendApiKey();
+                } else {
+                    alert(data.error || '保存失败');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('保存失败，请重试');
+            });
+        }
+
+        function saveNotificationFromEmail() {
+            const fromEmail = document.getElementById('notificationFromEmail').value.trim();
+            if (!fromEmail) {
+                alert('请输入通知发件邮箱');
+                return;
+            }
+            fetch('/api/admin/settings/notification-from-email', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ from_email: fromEmail })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    alert('通知发件邮箱已保存！');
+                    loadResendApiKey();
+                } else {
+                    alert(data.error || '保存失败');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('保存失败，请重试');
+            });
+        }
+
+        function saveNotificationEmails() {
+            const rawValue = document.getElementById('notificationEmails').value;
+            const normalized = rawValue
+                .split(/[\n,]+/)
+                .map(item => item.trim())
+                .filter(item => item.length > 0);
+            fetch('/api/admin/settings/notification-emails', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ emails: normalized })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    alert('通知成员列表已更新！');
                     loadResendApiKey();
                 } else {
                     alert(data.error || '保存失败');

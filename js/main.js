@@ -14,6 +14,8 @@ document.addEventListener('DOMContentLoaded', function() {
     fetchContent('about_mission', 'about-mission-title', 'about-mission-content');
 
     setupRecognition();
+    setupCatSearch();
+    setupAdoptionModal();
 });
 
 let recognitionStream = null;
@@ -22,6 +24,10 @@ let recognitionCanvas = null;
 let recognitionStatusEl = null;
 let recognitionResultsEl = null;
 let recognitionFileInput = null;
+let allCats = [];
+let filteredCats = [];
+let currentUser = null;
+let pendingAdoptionCat = null;
 
 function fetchContent(contentId, titleElementId, contentElementId) {
     fetch(`/api/content/${contentId}`)
@@ -108,6 +114,7 @@ function checkAuthStatus() {
         .then(response => response.json())
         .then(user => {
             if (user.id) {
+                currentUser = user;
                 // 用户已登录
                 updateUIAfterLogin(user);
                 
@@ -119,12 +126,14 @@ function checkAuthStatus() {
                     document.getElementById('adminBtn').style.display = 'inline-block';
                 }
             } else {
+                currentUser = null;
                 // 用户未登录
                 updateUIAfterLogout();
             }
         })
         .catch(error => {
             console.error('Error checking auth status:', error);
+            currentUser = null;
             updateUIAfterLogout();
         });
 }
@@ -191,6 +200,7 @@ function updateUIAfterLogin(user) {
 
 // 登出后更新UI
 function updateUIAfterLogout() {
+    currentUser = null;
     const authButtons = document.querySelector('.auth-buttons');
     if (authButtons) {
         // Hide upload and admin buttons
@@ -286,15 +296,9 @@ function loadCatData() {
     fetch('/api/cats')
         .then(response => response.json())
         .then(cats => {
-            const catList = document.querySelector('.cat-list');
-            if (!catList) return;
-            
-            catList.innerHTML = '';
-            
-            cats.forEach(cat => {
-                const catCard = createCatCard(cat);
-                catList.appendChild(catCard);
-            });
+            allCats = Array.isArray(cats) ? cats : [];
+            filteredCats = [...allCats];
+            renderCatCards(filteredCats);
         })
         .catch(error => {
             console.error('Error loading cats:', error);
@@ -361,7 +365,23 @@ function fallbackToHardcodedData() {
         }
     ];
     
-    hardcodedCats.forEach(cat => {
+    allCats = hardcodedCats;
+    filteredCats = [...allCats];
+    renderCatCards(filteredCats);
+}
+
+function renderCatCards(cats) {
+    const catList = document.querySelector('.cat-list');
+    if (!catList) return;
+    catList.innerHTML = '';
+    if (!cats || cats.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'no-cats';
+        empty.textContent = '暂未找到符合条件的猫咪，请尝试其它关键词。';
+        catList.appendChild(empty);
+        return;
+    }
+    cats.forEach(cat => {
         const catCard = createCatCard(cat);
         catList.appendChild(catCard);
     });
@@ -382,10 +402,13 @@ function createCatCard(cat) {
         </div>`;
     }
     
+    const isAdopted = !!cat.is_adopted;
+    const adoptButtonLabel = isAdopted ? '已被领养' : '我要领养';
     card.innerHTML = `
         ${imageHtml}
         <div class="info">
             <h3>${cat.name}</h3>
+            ${isAdopted ? '<span class="cat-status cat-status-adopted">已被领养</span>' : ''}
             <p><strong>年龄:</strong> ${cat.age}</p>
             <p><strong>性别:</strong> ${cat.gender}</p>
             <p>${cat.description || '暂无描述'}</p>
@@ -393,40 +416,178 @@ function createCatCard(cat) {
             <p><strong>显著特征:</strong> ${cat.unique_markings || '暂无'}</p>
             <p><strong>特别说明:</strong> ${cat.special_notes || '暂无'}</p>
             <p><strong>最近位置:</strong> ${cat.last_known_location || '暂无记录'}</p>
-            <button class="adopt-btn" data-cat-id="${cat.id}">我要领养</button>
+            <button class="adopt-btn" data-cat-id="${cat.id}" ${isAdopted ? 'disabled' : ''}>${adoptButtonLabel}</button>
         </div>
     `;
     
     // 绑定领养按钮事件
     const adoptBtn = card.querySelector('.adopt-btn');
-    adoptBtn.addEventListener('click', function() {
-        handleAdoptClick(cat.id);
-    });
+    if (!isAdopted) {
+        adoptBtn.addEventListener('click', function() {
+            handleAdoptClick(cat.id);
+        });
+    }
     
     return card;
 }
 
 // 处理领养点击事件
 function handleAdoptClick(catId) {
-    // Check if user is logged in
-    fetch('/api/current_user')
-        .then(response => response.json())
-        .then(user => {
-            if (!user.id) {
-                alert('请先登录后再申请领养！');
-                // Show login modal
-                if (window.authSystem) {
-                    window.authSystem.openModal('login');
-                }
-                return;
-            }
-            
-            alert(`感谢您的爱心！您已申请领养猫咪（ID: ${catId}）。我们的工作人员会尽快与您联系。`);
+    if (!currentUser || !currentUser.id) {
+        alert('请先登录后再申请领养！');
+        if (window.authSystem) {
+            window.authSystem.openModal('login');
+        }
+        return;
+    }
+    const targetCat = allCats.find(cat => parseInt(cat.id, 10) === parseInt(catId, 10));
+    if (!targetCat) {
+        alert('无法找到猫咪信息，请稍后再试。');
+        return;
+    }
+    if (targetCat.is_adopted) {
+        alert('这只猫咪已经被领养啦！');
+        return;
+    }
+    openAdoptionModal(targetCat);
+}
+
+function setupCatSearch() {
+    const searchInput = document.getElementById('catSearchInput');
+    if (!searchInput) return;
+    searchInput.addEventListener('input', (event) => {
+        const query = event.target.value.trim();
+        if (!query) {
+            filteredCats = [...allCats];
+        } else {
+            filteredCats = allCats.filter(cat => matchesQuery(cat, query));
+        }
+        renderCatCards(filteredCats);
+    });
+}
+
+function normalizeSearchText(text) {
+    return (text || '').toString().toLowerCase();
+}
+
+function matchesQuery(cat, query) {
+    const haystack = normalizeSearchText([
+        cat.name,
+        cat.age,
+        cat.gender,
+        cat.description,
+        cat.special_notes,
+        cat.unique_markings,
+        cat.last_known_location
+    ].join(' '));
+    const cleanedQuery = query.toLowerCase();
+    const terms = cleanedQuery.split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return true;
+    return terms.every(term => {
+        return haystack.includes(term) || isFuzzyMatch(haystack, term);
+    });
+}
+
+function isFuzzyMatch(text, query) {
+    let textIndex = 0;
+    for (const char of query) {
+        textIndex = text.indexOf(char, textIndex);
+        if (textIndex === -1) {
+            return false;
+        }
+        textIndex++;
+    }
+    return true;
+}
+
+function setupAdoptionModal() {
+    const modal = document.getElementById('adoptionModal');
+    if (!modal) return;
+    const closeBtn = document.getElementById('closeAdoptionModal');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeAdoptionModal);
+    }
+    const form = document.getElementById('adoptionForm');
+    if (form) {
+        form.addEventListener('submit', submitAdoptionForm);
+    }
+    window.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeAdoptionModal();
+        }
+    });
+}
+
+function openAdoptionModal(cat) {
+    pendingAdoptionCat = cat;
+    const modal = document.getElementById('adoptionModal');
+    if (!modal) return;
+    document.getElementById('adoptionCatName').textContent = `${cat.name} (ID: ${cat.id})`;
+    document.getElementById('adoptionCatId').value = cat.id;
+    document.getElementById('adoptionContact').value = currentUser && currentUser.email ? currentUser.email : '';
+    document.getElementById('adoptionMessage').value = '';
+    setAdoptionStatus('');
+    modal.style.display = 'block';
+}
+
+function closeAdoptionModal() {
+    const modal = document.getElementById('adoptionModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    pendingAdoptionCat = null;
+}
+
+function setAdoptionStatus(message, type = 'info') {
+    const statusEl = document.getElementById('adoptionStatus');
+    if (!statusEl) return;
+    if (!message) {
+        statusEl.style.display = 'none';
+        return;
+    }
+    statusEl.textContent = message;
+    statusEl.style.display = 'block';
+    statusEl.className = `status-message status-${type}`;
+}
+
+function submitAdoptionForm(event) {
+    event.preventDefault();
+    if (!pendingAdoptionCat) {
+        setAdoptionStatus('未找到猫咪信息，请关闭后重试。', 'error');
+        return;
+    }
+    const contact = document.getElementById('adoptionContact').value.trim();
+    const message = document.getElementById('adoptionMessage').value.trim();
+    if (!contact) {
+        setAdoptionStatus('请填写联系方式。', 'error');
+        return;
+    }
+    setAdoptionStatus('正在提交申请…', 'info');
+    fetch(`/api/cats/${pendingAdoptionCat.id}/adopt`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            contact_info: contact,
+            message: message
         })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('请先登录后再申请领养！');
-        });
+    })
+    .then(response => response.json().then(data => ({ ok: response.ok, data })))
+    .then(({ ok, data }) => {
+        if (ok) {
+            setAdoptionStatus('申请已提交，感谢您的爱心！', 'success');
+            setTimeout(() => {
+                closeAdoptionModal();
+            }, 1500);
+        } else {
+            throw new Error(data.error || '提交失败，请稍后再试。');
+        }
+    })
+    .catch(error => {
+        console.error('Adoption error:', error);
+        setAdoptionStatus(error.message || '提交失败，请稍后再试。', 'error');
+    });
 }
 
 // 模拟加载更多功能

@@ -142,6 +142,8 @@ class DatabaseManager:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 cat_id INTEGER,
                 user_id INTEGER,
+                message TEXT,
+                contact_info TEXT,
                 status TEXT DEFAULT 'pending',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (cat_id) REFERENCES cats (id),
@@ -149,6 +151,9 @@ class DatabaseManager:
             )
         '''
         )
+
+        self._ensure_column(cursor, 'adoption_requests', 'message', 'TEXT')
+        self._ensure_column(cursor, 'adoption_requests', 'contact_info', 'TEXT')
 
         cursor.execute(
             '''
@@ -374,6 +379,21 @@ class DatabaseManager:
         conn.close()
         return users
     
+    def get_admin_users(self):
+        """Return all administrator accounts"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, name, email, is_admin, is_verified, created_at
+            FROM users
+            WHERE is_admin = 1
+            ORDER BY created_at ASC
+        """)
+        users = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return users
+    
     def get_all_adoption_requests(self):
         """Get all adoption requests (for admin)"""
         conn = sqlite3.connect(self.db_path)
@@ -383,7 +403,11 @@ class DatabaseManager:
             SELECT 
                 ar.id,
                 ar.status,
+                ar.message,
+                ar.contact_info,
                 ar.created_at,
+                ar.cat_id,
+                ar.user_id,
                 c.name as cat_name,
                 u.name as user_name,
                 u.email as user_email
@@ -395,6 +419,61 @@ class DatabaseManager:
         requests = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return requests
+    
+    def get_adoption_request_by_id(self, request_id: int) -> Optional[Dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 
+                ar.*,
+                c.name as cat_name,
+                u.name as user_name,
+                u.email as user_email
+            FROM adoption_requests ar
+            JOIN cats c ON ar.cat_id = c.id
+            JOIN users u ON ar.user_id = u.id
+            WHERE ar.id = ?
+        ''', (request_id,))
+        request = cursor.fetchone()
+        conn.close()
+        return dict(request) if request else None
+
+    def create_adoption_request(self, cat_id: int, user_id: int, message: Optional[str] = None, contact_info: Optional[str] = None) -> Optional[int]:
+        """Create a new adoption request, avoid duplicates while pending."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id FROM adoption_requests
+            WHERE cat_id = ? AND user_id = ? AND status = 'pending'
+        ''', (cat_id, user_id))
+        existing = cursor.fetchone()
+        if existing:
+            conn.close()
+            return None
+
+        cursor.execute('''
+            INSERT INTO adoption_requests (cat_id, user_id, message, contact_info)
+            VALUES (?, ?, ?, ?)
+        ''', (cat_id, user_id, message, contact_info))
+        request_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return request_id
+
+    def update_adoption_request_status(self, request_id: int, status: str) -> bool:
+        """Update adoption request status."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE adoption_requests
+            SET status = ?
+            WHERE id = ?
+        ''', (status, request_id))
+        updated = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return updated
     
     def send_message(self, sender_id, receiver_id, subject, content):
         """Send a message from one user to another"""
@@ -421,6 +500,7 @@ class DatabaseManager:
                 m.content,
                 m.is_read,
                 m.created_at,
+                m.sender_id,
                 u.name as sender_name,
                 u.email as sender_email
             FROM messages m
@@ -443,6 +523,7 @@ class DatabaseManager:
                 m.subject,
                 m.content,
                 m.created_at,
+                m.receiver_id,
                 u.name as receiver_name,
                 u.email as receiver_email
             FROM messages m
@@ -465,6 +546,20 @@ class DatabaseManager:
         ''', (message_id,))
         conn.commit()
         conn.close()
+    
+    def mark_message_as_read_for_user(self, message_id, user_id) -> bool:
+        """Mark a message as read only if it belongs to the user"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE messages
+            SET is_read = 1
+            WHERE id = ? AND receiver_id = ?
+        ''', (message_id, user_id))
+        updated = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return updated
     
     def get_content(self, content_id):
         """Get content by ID"""
@@ -516,6 +611,21 @@ class DatabaseManager:
         ''', (key, value))
         conn.commit()
         conn.close()
+    
+    def get_notification_recipients(self) -> List[str]:
+        """Return notification recipient emails from settings"""
+        raw = self.get_setting('notification.emails')
+        if not raw:
+            return []
+        recipients = []
+        for entry in raw.split(','):
+            email = entry.strip()
+            if email:
+                recipients.append(email)
+        return recipients
+    
+    def get_notification_from_email(self) -> str:
+        return self.get_setting('notification.from_email') or "alerts@resend.dev"
     
     def create_user(self, name, email, password):
         """Create a new user with verification token"""
@@ -897,7 +1007,7 @@ class DatabaseManager:
         conn.close()
         return reference_id
 
-    def get_cat_reference_images(self, cat_id: int, include_embedding: bool = False) -> List[Dict]:
+    def get_cat_reference_images(self, cat_id: int, include_embedding: bool = False, reference_ids: Optional[List[int]] = None) -> List[Dict]:
         columns = [
             "id",
             "cat_id",
@@ -913,14 +1023,21 @@ class DatabaseManager:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        params = [cat_id]
+        filter_sql = ""
+        if reference_ids:
+            placeholders = ','.join('?' for _ in reference_ids)
+            filter_sql = f" AND id IN ({placeholders})"
+            params.extend(reference_ids)
+
         cursor.execute(
             f'''
             SELECT {', '.join(columns)}
             FROM cat_reference_images
-            WHERE cat_id = ?
+            WHERE cat_id = ? {filter_sql}
             ORDER BY created_at DESC
         ''',
-            (cat_id,),
+            tuple(params),
         )
         results = [dict(row) for row in cursor.fetchall()]
         conn.close()
@@ -955,6 +1072,20 @@ class DatabaseManager:
         count = cursor.fetchone()[0]
         conn.close()
         return count
+
+    def set_cat_adoption_state(self, cat_id: int, is_adopted: bool) -> None:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            UPDATE cats
+            SET is_adopted = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''',
+            (1 if is_adopted else 0, cat_id),
+        )
+        conn.commit()
+        conn.close()
 
     def list_reference_vectors(self) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
@@ -1097,8 +1228,8 @@ def create_cat_recognizer_from_settings() -> CatFaceRecognizer:
 
 cat_recognizer = create_cat_recognizer_from_settings()
 
-def recompute_cat_signature(cat_id: int) -> None:
-    references = db.get_cat_reference_images(cat_id, include_embedding=True)
+def recompute_cat_signature(cat_id: int, reference_ids: Optional[List[int]] = None) -> None:
+    references = db.get_cat_reference_images(cat_id, include_embedding=True, reference_ids=reference_ids)
     if not references:
         db.refresh_cat_signature(cat_id, None, None, None)
         return
@@ -1302,6 +1433,48 @@ def send_password_reset_email(email, name, code):
         print(f"Error sending email: {str(e)}")
         return False
 
+def send_notification_email(subject: str, html_body: str, text_body: Optional[str] = None) -> bool:
+    """Send a notification email to configured team members."""
+    api_key = db.get_setting('resend_api_key')
+    recipients = db.get_notification_recipients()
+    from_email = db.get_notification_from_email()
+
+    if not api_key:
+        print("Warning: Resend API key not configured. Notification not sent.")
+        return False
+    if not recipients:
+        print("Warning: Notification recipients not configured. Notification skipped.")
+        return False
+
+    email_data = {
+        "from": from_email,
+        "to": recipients,
+        "subject": subject,
+        "html": html_body,
+    }
+    if text_body:
+        email_data["text"] = text_body
+
+    try:
+        req = urllib.request.Request(
+            'https://api.resend.com/emails',
+            data=json.dumps(email_data).encode('utf-8'),
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json'
+            }
+        )
+        response = urllib.request.urlopen(req)
+        if response.getcode() == 200:
+            return True
+        print(f"Resend notification error: {response.getcode()}")
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        print(f"Resend notification HTTP error: {e.code} - {error_body}")
+    except Exception as e:
+        print(f"Error sending notification email: {str(e)}")
+    return False
+
 class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         # 添加CORS头部
@@ -1377,6 +1550,9 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     if path_parts[3] == 'restore':
                         self.handle_restore_cat(cat_id)
                         return
+                    if path_parts[3] == 'adopt':
+                        self.handle_create_adoption_request(cat_id)
+                        return
             except ValueError:
                 pass
 
@@ -1396,6 +1572,39 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_update_resend_from_email()
         elif self.path == '/api/admin/settings/base-url':
             self.handle_update_base_url()
+        elif self.path == '/api/admin/settings/notification-emails':
+            self.handle_update_notification_emails()
+        elif self.path == '/api/admin/settings/notification-from-email':
+            self.handle_update_notification_from_email()
+        elif self.path.startswith('/api/admin/cats/') and self.path.endswith('/regenerate-hash'):
+            path_parts = [part for part in self.path.split('/') if part]
+            try:
+                cat_id = int(path_parts[3])
+                self.handle_regenerate_cat_hash(cat_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid cat ID"}).encode())
+        elif self.path == '/api/messages/broadcast':
+            self.handle_broadcast_message()
+        elif self.path.startswith('/api/messages/') and self.path.endswith('/read'):
+            path_parts = self.path.strip('/').split('/')
+            try:
+                message_id = int(path_parts[2])
+                self.handle_mark_message_read(message_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid message ID"}).encode())
+        elif self.path.startswith('/api/adoption_requests/') and self.path.endswith('/status'):
+            path_parts = self.path.strip('/').split('/')
+            try:
+                request_id = int(path_parts[2])
+                self.handle_update_adoption_request_status(request_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid adoption request ID"}).encode())
         elif '/api/users/' in self.path and self.path.endswith('/verify'):
             # Handle user verification status update
             # Path format: /api/users/{user_id}/verify
@@ -1437,6 +1646,17 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         """Handle PUT requests"""
         if self.path == '/api/user/profile':
             self.handle_update_user_profile()
+        elif self.path.startswith('/api/admin/cats/'):
+            path_parts = [part for part in self.path.split('/') if part]
+            try:
+                if len(path_parts) >= 4 and path_parts[0] == 'api' and path_parts[1] == 'admin' and path_parts[2] == 'cats':
+                    cat_id = int(path_parts[3])
+                    self.handle_update_cat_admin(cat_id)
+                    return
+            except ValueError:
+                pass
+            self.send_response(400)
+            self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()
@@ -1482,6 +1702,10 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.handle_get_resend_from_email()
             elif self.path == '/api/admin/settings/base-url':
                 self.handle_get_base_url()
+            elif self.path == '/api/admin/settings/notification-emails':
+                self.handle_get_notification_emails()
+            elif self.path == '/api/admin/settings/notification-from-email':
+                self.handle_get_notification_from_email()
             elif self.path == '/api/cat-recognition/settings':
                 self.handle_get_recognition_settings()
             elif self.path == '/api/admin/cat-references':
@@ -1490,6 +1714,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.handle_get_recognition_events()
             elif self.path == '/api/admin/login-tokens':
                 self.handle_get_admin_login_tokens()
+            elif self.path == '/api/messages/recipients':
+                self.handle_get_message_recipients()
             elif self.path.startswith('/api/admin/login'):
                 # Handle admin login via token
                 query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -1548,6 +1774,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.path = '/content-management.html'
             elif path == '/profile':
                 self.path = '/profile.html'
+            elif path == '/admin-cat-editor':
+                self.path = '/admin-cat-editor.html'
             
             # 尝试提供静态文件
             try:
@@ -1838,10 +2066,83 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         # Add cat to database (default to not approved)
         cat_id = db.add_cat(name, age, gender, description, image_path, user['id'])
         
+        try:
+            submitter_name = user.get('name') or user.get('email')
+            subject = f"新的猫咪提交：{name}"
+            html_body = f"""
+                <p>提交人：{submitter_name} ({user.get('email')})</p>
+                <p>猫咪名称：{name}</p>
+                <p>年龄：{age or '未填写'}</p>
+                <p>性别：{gender or '未填写'}</p>
+                <p>描述：{description or '未填写'}</p>
+                <p>请前往后台审核该猫咪。</p>
+            """
+            send_notification_email(subject, html_body)
+        except Exception as notify_err:
+            print(f"Notification error (cat submission): {notify_err}")
+
         self.send_response(201)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps({"id": cat_id, "message": "Cat added successfully, pending admin approval"}).encode())
+
+    def handle_create_adoption_request(self, cat_id: int):
+        """Handle user adoption request"""
+        user = self.get_current_user()
+        if not user:
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Authentication required"}).encode())
+            return
+
+        cat = db.get_cat_by_id(cat_id)
+        if not cat or not cat.get('is_approved'):
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Cat not found or not available"}).encode())
+            return
+
+        content_length = int(self.headers.get('Content-Length', 0))
+        payload = self.rfile.read(content_length) if content_length else b'{}'
+        try:
+            data = json.loads(payload.decode('utf-8'))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        message = (data.get('message') or '').strip()
+        contact_info = (data.get('contact_info') or '').strip()
+
+        request_id = db.create_adoption_request(cat_id, user['id'], message or None, contact_info or None)
+        if request_id is None:
+            self.send_response(409)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "You already have a pending request for this cat"}).encode())
+            return
+
+        subject = f"新的领养申请：{cat.get('name')}"
+        html_body = f"""
+            <p>申请人：{user.get('name') or user.get('email')} ({user.get('email')})</p>
+            <p>猫咪：{cat.get('name')} (ID: {cat_id})</p>
+            <p>联系方式：{contact_info or '未提供'}</p>
+            <p>申请留言：{message or '（无留言）'}</p>
+            <p>请登录管理后台处理该申请。</p>
+        """
+        try:
+            send_notification_email(subject, html_body)
+        except Exception as notify_err:
+            print(f"Notification error (adoption request): {notify_err}")
+
+        self.send_response(201)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({
+            "id": request_id,
+            "status": "pending",
+            "message": "Adoption request submitted"
+        }).encode())
     
     def handle_admin_create_cat_profile(self):
         """Create a new cat profile from the admin console."""
@@ -2007,6 +2308,116 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             "references": references,
             "saved": saved_references
         }).encode())
+
+    def handle_update_cat_admin(self, cat_id: int):
+        """Update cat details from admin editor"""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+        except (TypeError, ValueError):
+            content_length = 0
+        payload = self.rfile.read(content_length) if content_length else b'{}'
+        try:
+            data = json.loads(payload.decode('utf-8'))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        allowed_fields = {
+            "name", "age", "gender", "description", "special_notes",
+            "unique_markings", "last_known_location", "sterilized",
+            "microchipped", "is_adopted", "is_approved", "is_rejected"
+        }
+        bool_fields = {"sterilized", "microchipped", "is_adopted", "is_approved", "is_rejected"}
+        updates = {}
+        for field in allowed_fields:
+            if field in data:
+                value = data.get(field)
+                if field in bool_fields:
+                    updates[field] = 1 if value else 0
+                else:
+                    updates[field] = value
+
+        if not updates:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "No valid fields to update"}).encode())
+            return
+
+        success = db.update_cat_profile(cat_id, updates)
+        if not success:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Cat not found"}).encode())
+            return
+
+        cat = sanitize_cat_record(db.get_cat_by_id(cat_id))
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"message": "Cat updated", "cat": cat}).encode())
+
+    def handle_regenerate_cat_hash(self, cat_id: int):
+        """Regenerate aggregate hash using selected references"""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+        except (TypeError, ValueError):
+            content_length = 0
+        payload = self.rfile.read(content_length) if content_length else b'{}'
+        try:
+            data = json.loads(payload.decode('utf-8'))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        reference_ids = data.get('reference_ids')
+        references = None
+        if reference_ids is not None:
+            if not isinstance(reference_ids, list) or not all(isinstance(rid, int) for rid in reference_ids):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "reference_ids must be a list of integers"}).encode())
+                return
+            references = db.get_cat_reference_images(cat_id, include_embedding=True, reference_ids=reference_ids)
+            if not references:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Selected reference images not found"}).encode())
+                return
+        else:
+            references = db.get_cat_reference_images(cat_id, include_embedding=True)
+
+        if not references:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "No reference images available"}).encode())
+            return
+
+        ids = reference_ids if reference_ids else None
+        recompute_cat_signature(cat_id, reference_ids=ids)
+        cat = sanitize_cat_record(db.get_cat_by_id(cat_id))
+
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"message": "Hash regenerated", "cat": cat}).encode())
 
     def handle_get_cat_profiles_admin(self):
         """Return detailed cat profiles for the admin console."""
@@ -2468,6 +2879,75 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(500)
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+    def handle_update_adoption_request_status(self, request_id: int):
+        """Approve or reject an adoption request"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        content_length = int(self.headers.get('Content-Length', 0))
+        payload = self.rfile.read(content_length) if content_length else b'{}'
+        try:
+            data = json.loads(payload.decode('utf-8'))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        status = (data.get('status') or '').lower()
+        if status not in ('pending', 'approved', 'rejected'):
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid status"}).encode())
+            return
+
+        request_record = db.get_adoption_request_by_id(request_id)
+        if not request_record:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Adoption request not found"}).encode())
+            return
+
+        updated = db.update_adoption_request_status(request_id, status)
+        if not updated:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Failed to update adoption request"}).encode())
+            return
+
+        if status == 'approved':
+            db.set_cat_adoption_state(request_record['cat_id'], True)
+        elif status == 'rejected':
+            db.set_cat_adoption_state(request_record['cat_id'], False)
+
+        adopter = db.get_user_by_id(request_record['user_id'])
+        cat = db.get_cat_by_id(request_record['cat_id'])
+        subject = f"领养申请更新：{cat.get('name')}"
+        html_body = f"""
+            <p>申请人：{adopter.get('name') or adopter.get('email')} ({adopter.get('email')})</p>
+            <p>猫咪：{cat.get('name')} (ID: {cat.get('id')})</p>
+            <p>新的状态：{status}</p>
+            <p>处理人：{user.get('name')}</p>
+        """
+        try:
+            send_notification_email(subject, html_body)
+        except Exception as notify_err:
+            print(f"Notification error (adoption status): {notify_err}")
+
+        # Notify adopter via internal message
+        message_subject = f"领养申请已更新：{cat.get('name')}"
+        message_content = f"您的领养申请状态已更新为：{status}。如需了解详情，请联系管理员。"
+        db.send_message(user['id'], adopter['id'], message_subject, message_content)
+
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"message": "Status updated", "status": status}).encode())
     
     def handle_send_message(self):
         """Handle sending a message"""
@@ -2521,6 +3001,25 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(500)
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+    def handle_mark_message_read(self, message_id: int):
+        """Mark a message as read for the current user"""
+        user = self.get_current_user()
+        if not user:
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Authentication required"}).encode())
+            return
+
+        success = db.mark_message_as_read_for_user(message_id, user['id'])
+        if success:
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({"message": "Message marked as read"}).encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Message not found"}).encode())
     
     def handle_get_sent_messages(self):
         """Handle getting user's sent messages"""
@@ -2542,6 +3041,79 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(500)
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
+    
+    def handle_get_message_recipients(self):
+        """Return list of available message recipients based on user role"""
+        user = self.get_current_user()
+        if not user:
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Authentication required"}).encode())
+            return
+
+        is_admin = bool(user.get('is_admin'))
+        recipients = []
+        if is_admin:
+            recipients = [
+                {"id": u['id'], "name": u['name'], "email": u['email'], "is_admin": bool(u.get('is_admin'))}
+                for u in db.get_all_users()
+                if u['id'] != user['id']
+            ]
+        else:
+            recipients = [
+                {"id": u['id'], "name": u['name'], "email": u['email'], "is_admin": True}
+                for u in db.get_admin_users()
+            ]
+
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({
+            "recipients": recipients,
+            "is_admin": is_admin
+        }).encode())
+
+    def handle_broadcast_message(self):
+        """Send a broadcast message from admin to multiple users"""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        content_length = int(self.headers.get('Content-Length', 0))
+        payload = self.rfile.read(content_length) if content_length else b'{}'
+        try:
+            data = json.loads(payload.decode('utf-8'))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        subject = (data.get('subject') or '').strip()
+        content = (data.get('content') or '').strip()
+        include_admins = bool(data.get('include_admins'))
+
+        if not subject or not content:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Subject and content are required"}).encode())
+            return
+
+        recipients = db.get_all_users()
+        targets = [
+            r for r in recipients
+            if r['id'] != user['id'] and (include_admins or not r.get('is_admin'))
+        ]
+
+        for recipient in targets:
+            db.send_message(user['id'], recipient['id'], subject, content)
+
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(json.dumps({"message": f"Broadcast sent to {len(targets)} recipients"}).encode())
     
     def handle_get_content(self, content_id):
         """Handle getting specific content by ID"""
@@ -2813,6 +3385,96 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(500)
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+    def handle_get_notification_emails(self):
+        """Return configured notification recipients"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        recipients = db.get_notification_recipients()
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"emails": recipients}).encode())
+
+    def handle_update_notification_emails(self):
+        """Update notification recipient emails"""
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        content_length = int(self.headers.get('Content-Length', 0))
+        payload = self.rfile.read(content_length) if content_length else b'{}'
+        try:
+            data = json.loads(payload.decode('utf-8'))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        raw_emails = data.get('emails')
+        if isinstance(raw_emails, list):
+            emails = [email.strip() for email in raw_emails if email and isinstance(email, str)]
+            value = ','.join(emails)
+        else:
+            value = (raw_emails or '').strip()
+
+        db.set_setting('notification.emails', value)
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(json.dumps({"message": "Notification recipients updated"}).encode())
+
+    def handle_get_notification_from_email(self):
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        from_email = db.get_notification_from_email()
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"from_email": from_email}).encode())
+
+    def handle_update_notification_from_email(self):
+        user = self.get_current_user()
+        if not user or not user['is_admin']:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        content_length = int(self.headers.get('Content-Length', 0))
+        payload = self.rfile.read(content_length) if content_length else b'{}'
+        try:
+            data = json.loads(payload.decode('utf-8'))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        from_email = (data.get('from_email') or '').strip()
+        if not from_email:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Notification from email is required"}).encode())
+            return
+
+        db.set_setting('notification.from_email', from_email)
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(json.dumps({"message": "Notification from email updated"}).encode())
     
     def handle_get_base_url(self):
         """Get the base website URL (admin only)"""
