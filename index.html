@@ -47,8 +47,39 @@
         <section id="cats">
             <div class="container">
                 <h2>猫咪信息</h2>
+                <div class="cat-search">
+                    <input type="text" id="catSearchInput" placeholder="输入关键字进行模糊搜索，例如“奶牛”“黑白”“温顺”等">
+                    <small>模糊匹配猫咪的名称、特征、描述信息</small>
+                </div>
                 <div class="cat-list">
                     <!-- 猫咪信息将通过JavaScript动态加载 -->
+                </div>
+            </div>
+        </section>
+
+        <section id="recognition" class="recognition-section">
+            <div class="container">
+                <h2>猫脸识别</h2>
+                <p class="recognition-intro">拍摄或上传猫咪照片，我们会尝试匹配数据库中已记录的猫咪档案，帮助您快速了解它的身份信息。</p>
+                <div class="recognition-wrapper">
+                    <div class="recognition-controls">
+                        <video id="recognitionVideo" autoplay muted playsinline class="recognition-video"></video>
+                        <canvas id="recognitionCanvas" width="640" height="480" style="display:none;"></canvas>
+                        <div class="recognition-buttons">
+                            <button id="startCameraBtn" class="btn-primary">开启摄像头</button>
+                            <button id="capturePhotoBtn" class="btn-secondary">拍摄并识别</button>
+                        </div>
+                        <div class="recognition-divider">或</div>
+                        <label class="file-upload">
+                            <span>上传图片</span>
+                            <input type="file" id="recognitionFileInput" accept="image/*">
+                        </label>
+                        <button id="uploadRecognizeBtn" class="btn-primary">上传并识别</button>
+                        <div id="recognitionStatus" class="recognition-status"></div>
+                    </div>
+                    <div class="recognition-results" id="recognitionResults">
+                        <p class="recognition-placeholder">尚未进行识别。请拍照或上传图片后查看结果。</p>
+                    </div>
                 </div>
             </div>
         </section>
@@ -71,6 +102,53 @@
                 <button type="submit">登录</button>
             </form>
             <p>还没有账户？<a href="#" id="showRegister">立即注册</a></p>
+            <p><a href="#" id="showForgotPassword">忘记密码？</a></p>
+        </div>
+    </div>
+
+    <!-- 忘记密码模态框 -->
+    <div id="forgotPasswordModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>找回密码</h2>
+            <form id="forgotPasswordForm">
+                <div class="form-group">
+                    <label for="forgotPasswordEmail">邮箱地址:</label>
+                    <input type="email" id="forgotPasswordEmail" required>
+                    <small style="color: #666; display: block; margin-top: 5px;">我们将向您的邮箱发送一个6位验证码</small>
+                </div>
+                <button type="submit">发送验证码</button>
+                <div id="forgotPasswordStatus" style="margin-top: 10px; padding: 10px; display: none; border-radius: 4px;"></div>
+            </form>
+            <p><a href="#" id="showLoginFromForgot">返回登录</a></p>
+        </div>
+    </div>
+
+    <!-- 重置密码模态框 -->
+    <div id="resetPasswordModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>重置密码</h2>
+            <form id="resetPasswordForm">
+                <input type="hidden" id="resetPasswordEmail">
+                <div class="form-group">
+                    <label for="resetPasswordCode">验证码:</label>
+                    <input type="text" id="resetPasswordCode" maxlength="6" pattern="[0-9]{6}" placeholder="请输入6位验证码" required>
+                    <small style="color: #666; display: block; margin-top: 5px;">请输入发送到您邮箱的6位验证码</small>
+                </div>
+                <div class="form-group">
+                    <label for="resetPasswordNew">新密码:</label>
+                    <input type="password" id="resetPasswordNew" required>
+                    <small style="color: #666; display: block; margin-top: 5px;">密码至少8位，包含字母和数字</small>
+                </div>
+                <div class="form-group">
+                    <label for="resetPasswordConfirm">确认新密码:</label>
+                    <input type="password" id="resetPasswordConfirm" required>
+                </div>
+                <button type="submit">重置密码</button>
+                <div id="resetPasswordStatus" style="margin-top: 10px; padding: 10px; display: none; border-radius: 4px;"></div>
+            </form>
+            <p><a href="#" id="showForgotFromReset">重新发送验证码</a></p>
         </div>
     </div>
 
@@ -99,6 +177,30 @@
                 <button type="submit">注册</button>
             </form>
             <p>已有账户？<a href="#" id="showLogin">立即登录</a></p>
+        </div>
+    </div>
+
+    <!-- 领养申请模态框 -->
+    <div id="adoptionModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="closeAdoptionModal">&times;</span>
+            <h2>猫咪领养申请</h2>
+            <div class="adoption-cat-summary">
+                <p><strong>猫咪：</strong><span id="adoptionCatName">-</span></p>
+            </div>
+            <form id="adoptionForm">
+                <input type="hidden" id="adoptionCatId">
+                <div class="form-group">
+                    <label for="adoptionContact">联系方式（必填）</label>
+                    <input type="text" id="adoptionContact" placeholder="例如：手机号 / 微信 / 电子邮箱" required>
+                </div>
+                <div class="form-group">
+                    <label for="adoptionMessage">自我介绍 / 领养原因（选填）</label>
+                    <textarea id="adoptionMessage" rows="4" placeholder="简单介绍您的养宠经验、家庭情况等"></textarea>
+                </div>
+                <button type="submit">提交领养申请</button>
+                <div id="adoptionStatus" class="status-message" style="display:none;"></div>
+            </form>
         </div>
     </div>
 

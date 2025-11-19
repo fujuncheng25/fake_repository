@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人资料 - 流浪猫公益项目</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .profile-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+        
+        .profile-section {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            overflow: hidden;
+        }
+        
+        .profile-section h2 {
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px 20px;
+            margin: 0;
+        }
+        
+        .profile-content {
+            padding: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .form-group input {
+            width: 100%;
+            max-width: 500px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        
+        .btn-primary {
+            background-color: #4CAF50;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #45a049;
+        }
+        
+        .btn-secondary {
+            background-color: #666;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #555;
+        }
+        
+        .status-message {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+        
+        .status-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>流浪猫公益项目</h1>
+            <nav>
+                <ul>
+                    <li><a href="/">首页</a></li>
+                    <li><a href="/about">关于我们</a></li>
+                    <li><a href="/messages">消息中心</a></li>
+                    <li><a href="/profile">个人资料</a></li>
+                </ul>
+            </nav>
+            <div class="auth-buttons">
+                <span id="userName"></span>
+                <button id="logoutBtn">退出</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="profile-container">
+            <div class="profile-section">
+                <h2>个人资料</h2>
+                <div class="profile-content">
+                    <form id="profileForm">
+                        <div class="form-group">
+                            <label for="profileName">姓名:</label>
+                            <input type="text" id="profileName" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="profileEmail">邮箱地址:</label>
+                            <input type="email" id="profileEmail" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">保存资料</button>
+                        <div id="profileStatus" class="status-message"></div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="profile-section">
+                <h2>修改密码</h2>
+                <div class="profile-content">
+                    <form id="passwordForm">
+                        <div class="form-group">
+                            <label for="currentPassword">当前密码:</label>
+                            <input type="password" id="currentPassword" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="newPassword">新密码:</label>
+                            <input type="password" id="newPassword" required>
+                            <small style="color: #666; display: block; margin-top: 5px;">密码至少8位，包含字母和数字</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="confirmPassword">确认新密码:</label>
+                            <input type="password" id="confirmPassword" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">修改密码</button>
+                        <div id="passwordStatus" class="status-message"></div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 流浪猫公益项目. 保留所有权利.</p>
+        </div>
+    </footer>
+
+    <script>
+        // Check authentication
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuthAndLoadProfile();
+            
+            document.getElementById('logoutBtn').addEventListener('click', function() {
+                fetch('/api/logout', { method: 'POST', credentials: 'include' })
+                    .then(() => {
+                        window.location.href = '/';
+                    });
+            });
+            
+            document.getElementById('profileForm').addEventListener('submit', handleProfileUpdate);
+            document.getElementById('passwordForm').addEventListener('submit', handlePasswordChange);
+        });
+
+        function checkAuthAndLoadProfile() {
+            fetch('/api/current_user', { credentials: 'include' })
+                .then(response => response.json())
+                .then(user => {
+                    if (!user.id) {
+                        window.location.href = '/';
+                        return;
+                    }
+                    
+                    document.getElementById('userName').textContent = `欢迎, ${user.name}`;
+                    document.getElementById('profileName').value = user.name;
+                    document.getElementById('profileEmail').value = user.email;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    window.location.href = '/';
+                });
+        }
+
+        function handleProfileUpdate(e) {
+            e.preventDefault();
+            
+            const name = document.getElementById('profileName').value.trim();
+            const email = document.getElementById('profileEmail').value.trim();
+            const statusDiv = document.getElementById('profileStatus');
+            
+            statusDiv.style.display = 'none';
+            
+            fetch('/api/user/profile', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name, email }),
+                credentials: 'include'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    statusDiv.className = 'status-message status-success';
+                    statusDiv.textContent = data.message;
+                    statusDiv.style.display = 'block';
+                    if (data.user) {
+                        document.getElementById('userName').textContent = `欢迎, ${data.user.name}`;
+                    }
+                } else {
+                    statusDiv.className = 'status-message status-error';
+                    statusDiv.textContent = data.error || '更新失败';
+                    statusDiv.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                statusDiv.className = 'status-message status-error';
+                statusDiv.textContent = '更新失败，请重试';
+                statusDiv.style.display = 'block';
+            });
+        }
+
+        function handlePasswordChange(e) {
+            e.preventDefault();
+            
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const statusDiv = document.getElementById('passwordStatus');
+            
+            statusDiv.style.display = 'none';
+            
+            if (newPassword !== confirmPassword) {
+                statusDiv.className = 'status-message status-error';
+                statusDiv.textContent = '新密码和确认密码不一致';
+                statusDiv.style.display = 'block';
+                return;
+            }
+            
+            if (newPassword.length < 8) {
+                statusDiv.className = 'status-message status-error';
+                statusDiv.textContent = '密码至少需要8位';
+                statusDiv.style.display = 'block';
+                return;
+            }
+            
+            fetch('/api/user/change-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    current_password: currentPassword,
+                    new_password: newPassword,
+                    confirm_password: confirmPassword
+                }),
+                credentials: 'include'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    statusDiv.className = 'status-message status-success';
+                    statusDiv.textContent = data.message;
+                    statusDiv.style.display = 'block';
+                    document.getElementById('passwordForm').reset();
+                    
+                    // Logout after password change
+                    setTimeout(() => {
+                        fetch('/api/logout', { method: 'POST', credentials: 'include' })
+                            .then(() => {
+                                alert('密码已修改，请重新登录');
+                                window.location.href = '/';
+                            });
+                    }, 2000);
+                } else {
+                    statusDiv.className = 'status-message status-error';
+                    statusDiv.textContent = data.error || '密码修改失败';
+                    statusDiv.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                statusDiv.className = 'status-message status-error';
+                statusDiv.textContent = '密码修改失败，请重试';
+                statusDiv.style.display = 'block';
+            });
+        }
+    </script>
+</body>
+</html>

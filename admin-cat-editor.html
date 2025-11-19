@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>猫咪编辑工具 - 流浪猫公益项目</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body { background-color: #f4f6f8; }
+        .editor-container {
+            max-width: 1200px;
+            margin: 30px auto;
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 20px;
+            padding: 0 20px 40px;
+        }
+        .panel {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+            padding: 20px;
+        }
+        .panel h2 {
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+        .cat-list-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .cat-list-table th,
+        .cat-list-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            text-align: left;
+        }
+        .cat-list-table tr:hover {
+            background-color: #f9fafb;
+            cursor: pointer;
+        }
+        .cat-list-table tr.active {
+            background-color: #e8f5e9;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+        }
+        .form-grid label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 6px;
+        }
+        .form-grid input,
+        .form-grid textarea,
+        .form-grid select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .reference-list {
+            max-height: 280px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            padding: 10px;
+            background-color: #fafafa;
+        }
+        .reference-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 0;
+            border-bottom: 1px dashed #e0e0e0;
+        }
+        .reference-item:last-child {
+            border-bottom: none;
+        }
+        .actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .actions button {
+            border: none;
+            padding: 10px 18px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .btn-primary { background-color: #4CAF50; color: #fff; }
+        .btn-secondary { background-color: #6c757d; color: #fff; }
+        .btn-danger { background-color: #c0392b; color: #fff; }
+        .status-area {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+        .status-success { background-color: #d4edda; color: #155724; }
+        .status-error { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>猫咪编辑工具</h1>
+            <div class="auth-buttons">
+                <button onclick="window.location.href='/admin'">返回控制台</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="editor-container">
+            <div class="panel">
+                <h2>猫咪列表</h2>
+                <input type="text" id="catFilterInput" placeholder="按名称或状态搜索..." style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ddd; border-radius:4px;">
+                <div style="overflow-y: auto; max-height: 600px;">
+                    <table class="cat-list-table" id="editorCatsTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>名称</th>
+                                <th>状态</th>
+                                <th>更新时间</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="4" style="text-align:center; padding:20px;">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>猫咪详情</h2>
+                <div id="editorEmptyState">请选择左侧猫咪以开始编辑。</div>
+                <form id="catEditForm" style="display:none;">
+                    <div class="form-grid">
+                        <div>
+                            <label>名称</label>
+                            <input type="text" id="editName" required>
+                        </div>
+                        <div>
+                            <label>年龄</label>
+                            <input type="text" id="editAge">
+                        </div>
+                        <div>
+                            <label>性别</label>
+                            <select id="editGender">
+                                <option value="">未设置</option>
+                                <option value="雄性">雄性</option>
+                                <option value="雌性">雌性</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>显著特征</label>
+                            <input type="text" id="editUniqueMarkings">
+                        </div>
+                        <div>
+                            <label>最近位置</label>
+                            <input type="text" id="editLastLocation">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top:15px;">
+                        <label>描述</label>
+                        <textarea id="editDescription" rows="3"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>特别说明</label>
+                        <textarea id="editSpecialNotes" rows="3"></textarea>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; gap:20px; margin:15px 0;">
+                        <label><input type="checkbox" id="editSterilized"> 已绝育</label>
+                        <label><input type="checkbox" id="editMicrochipped"> 已植入芯片</label>
+                        <label><input type="checkbox" id="editApproved"> 已审核通过</label>
+                        <label><input type="checkbox" id="editAdopted"> 已被领养</label>
+                    </div>
+                    <div>
+                        <h3>参考图片</h3>
+                        <p>勾选要用于重新生成哈希值的参考图片。</p>
+                        <div class="reference-list" id="referenceList">
+                            <div style="text-align:center; color:#666;">加载中...</div>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="btn-primary" onclick="saveCatChanges()">保存修改</button>
+                        <button type="button" class="btn-secondary" onclick="regenerateHash()">重新生成哈希</button>
+                    </div>
+                    <div class="status-area" id="editorStatus"></div>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let editorCats = [];
+        let selectedCatId = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAdminAccess()
+                .then(loadEditorCats)
+                .catch(() => window.location.href = '/');
+
+            document.getElementById('catFilterInput').addEventListener('input', filterCats);
+        });
+
+        function checkAdminAccess() {
+            return fetch('/api/current_user')
+                .then(res => res.json())
+                .then(user => {
+                    if (!user.id || !user.is_admin) {
+                        alert('您没有权限访问该页面');
+                        throw new Error('unauthorized');
+                    }
+                    return true;
+                });
+        }
+
+        function loadEditorCats() {
+            fetch('/api/admin/cats')
+                .then(res => res.json())
+                .then(cats => {
+                    editorCats = cats || [];
+                    renderCatsTable(editorCats);
+                })
+                .catch(err => {
+                    console.error('load cats error', err);
+                    const tbody = document.querySelector('#editorCatsTable tbody');
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px;">加载失败</td></tr>';
+                });
+        }
+
+        function renderCatsTable(cats) {
+            const tbody = document.querySelector('#editorCatsTable tbody');
+            tbody.innerHTML = '';
+            if (!cats.length) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px;">暂无猫咪数据</td></tr>';
+                return;
+            }
+            cats.forEach(cat => {
+                const row = tbody.insertRow();
+                row.dataset.catId = cat.id;
+                row.innerHTML = `
+                    <td>${cat.id}</td>
+                    <td>${cat.name}</td>
+                    <td>${cat.is_adopted ? '已领养' : (cat.is_approved ? '已上架' : '待审核')}</td>
+                    <td>${cat.updated_at ? new Date(cat.updated_at).toLocaleString() : '—'}</td>
+                `;
+                row.addEventListener('click', () => selectCat(cat.id, row));
+                if (cat.id === selectedCatId) {
+                    row.classList.add('active');
+                }
+            });
+        }
+
+        function filterCats(event) {
+            const query = event.target.value.toLowerCase();
+            const filtered = editorCats.filter(cat => {
+                const haystack = `${cat.name} ${cat.id} ${cat.description || ''} ${cat.is_adopted ? 'adopted' : ''}`.toLowerCase();
+                return haystack.includes(query);
+            });
+            renderCatsTable(filtered);
+        }
+
+        function selectCat(catId, row) {
+            selectedCatId = catId;
+            document.querySelectorAll('#editorCatsTable tbody tr').forEach(tr => tr.classList.remove('active'));
+            if (row) row.classList.add('active');
+            loadCatDetail(catId);
+        }
+
+        function loadCatDetail(catId) {
+            fetch(`/api/admin/cat-profiles/${catId}`)
+                .then(res => res.json())
+                .then(cat => populateCatForm(cat))
+                .catch(err => {
+                    console.error('load cat profile error', err);
+                    setEditorStatus('加载猫咪详情失败', 'error');
+                });
+        }
+
+        function populateCatForm(cat) {
+            document.getElementById('editorEmptyState').style.display = 'none';
+            const form = document.getElementById('catEditForm');
+            form.style.display = 'block';
+            document.getElementById('editName').value = cat.name || '';
+            document.getElementById('editAge').value = cat.age || '';
+            document.getElementById('editGender').value = cat.gender || '';
+            document.getElementById('editUniqueMarkings').value = cat.unique_markings || '';
+            document.getElementById('editLastLocation').value = cat.last_known_location || '';
+            document.getElementById('editDescription').value = cat.description || '';
+            document.getElementById('editSpecialNotes').value = cat.special_notes || '';
+            document.getElementById('editSterilized').checked = !!cat.sterilized;
+            document.getElementById('editMicrochipped').checked = !!cat.microchipped;
+            document.getElementById('editApproved').checked = !!cat.is_approved;
+            document.getElementById('editAdopted').checked = !!cat.is_adopted;
+            renderReferenceList(cat.reference_images || []);
+            setEditorStatus('');
+        }
+
+        function renderReferenceList(references) {
+            const list = document.getElementById('referenceList');
+            if (!references.length) {
+                list.innerHTML = '<div style="text-align:center; color:#666;">暂无参考图片</div>';
+                return;
+            }
+            list.innerHTML = '';
+            references.forEach(ref => {
+                const item = document.createElement('div');
+                item.className = 'reference-item';
+                item.innerHTML = `
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" value="${ref.id}" class="reference-checkbox" checked>
+                        <span>#${ref.id} ${ref.image_path || ''}</span>
+                    </label>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        function collectCatPayload() {
+            return {
+                name: document.getElementById('editName').value.trim(),
+                age: document.getElementById('editAge').value.trim(),
+                gender: document.getElementById('editGender').value,
+                unique_markings: document.getElementById('editUniqueMarkings').value.trim(),
+                last_known_location: document.getElementById('editLastLocation').value.trim(),
+                description: document.getElementById('editDescription').value.trim(),
+                special_notes: document.getElementById('editSpecialNotes').value.trim(),
+                sterilized: document.getElementById('editSterilized').checked,
+                microchipped: document.getElementById('editMicrochipped').checked,
+                is_approved: document.getElementById('editApproved').checked,
+                is_adopted: document.getElementById('editAdopted').checked
+            };
+        }
+
+        function saveCatChanges() {
+            if (!selectedCatId) return;
+            const payload = collectCatPayload();
+            fetch(`/api/admin/cats/${selectedCatId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(res => res.json().then(data => ({ ok: res.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    setEditorStatus('猫咪信息已保存', 'success');
+                    loadEditorCats();
+                } else {
+                    throw new Error(data.error || '保存失败');
+                }
+            })
+            .catch(err => {
+                console.error('save cat error', err);
+                setEditorStatus(err.message || '保存失败', 'error');
+            });
+        }
+
+        function regenerateHash() {
+            if (!selectedCatId) return;
+            const checkedRefs = Array.from(document.querySelectorAll('.reference-checkbox'))
+                .filter(cb => cb.checked)
+                .map(cb => parseInt(cb.value, 10));
+            fetch(`/api/admin/cats/${selectedCatId}/regenerate-hash`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reference_ids: checkedRefs })
+            })
+            .then(res => res.json().then(data => ({ ok: res.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    setEditorStatus('哈希值已重新生成', 'success');
+                } else {
+                    throw new Error(data.error || '操作失败');
+                }
+            })
+            .catch(err => {
+                console.error('hash regen error', err);
+                setEditorStatus(err.message || '操作失败', 'error');
+            });
+        }
+
+        function setEditorStatus(message, type = '') {
+            const status = document.getElementById('editorStatus');
+            if (!status) return;
+            if (!message) {
+                status.style.display = 'none';
+                return;
+            }
+            status.textContent = message;
+            status.className = `status-area ${type === 'error' ? 'status-error' : 'status-success'}`;
+            status.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
+
