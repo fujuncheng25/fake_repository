@@ -96,11 +96,15 @@ class DatabaseManager:
                 hash_length INTEGER NOT NULL,
                 embedding_vector BLOB,
                 is_primary BOOLEAN DEFAULT 0,
+                order_index INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (cat_id) REFERENCES cats(id) ON DELETE CASCADE
             )
         '''
         )
+        
+        # Ensure order_index column exists for legacy databases
+        self._ensure_column(cursor, 'cat_reference_images', 'order_index', 'INTEGER DEFAULT 0')
 
         cursor.execute(
             '''
@@ -981,6 +985,11 @@ class DatabaseManager:
     ) -> int:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
+        # Get max order_index for this cat to append at the end
+        cursor.execute('SELECT COALESCE(MAX(order_index), -1) FROM cat_reference_images WHERE cat_id = ?', (cat_id,))
+        max_order = cursor.fetchone()[0] or -1
+        new_order = max_order + 1
+        
         cursor.execute(
             '''
             INSERT INTO cat_reference_images (
@@ -989,9 +998,10 @@ class DatabaseManager:
                 hash_hex,
                 hash_length,
                 embedding_vector,
-                is_primary
+                is_primary,
+                order_index
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ''',
             (
                 cat_id,
@@ -1000,6 +1010,7 @@ class DatabaseManager:
                 hash_length,
                 sqlite3.Binary(embedding_bytes),
                 1 if is_primary else 0,
+                new_order,
             ),
         )
         reference_id = cursor.lastrowid
@@ -1015,6 +1026,7 @@ class DatabaseManager:
             "hash_hex",
             "hash_length",
             "is_primary",
+            "order_index",
             "created_at",
         ]
         if include_embedding:
@@ -1035,7 +1047,7 @@ class DatabaseManager:
             SELECT {', '.join(columns)}
             FROM cat_reference_images
             WHERE cat_id = ? {filter_sql}
-            ORDER BY created_at DESC
+            ORDER BY order_index ASC, created_at DESC
         ''',
             tuple(params),
         )
@@ -1103,6 +1115,105 @@ class DatabaseManager:
         conn.close()
         return count
 
+    def delete_reference_image(self, reference_id: int) -> bool:
+        """Delete a reference image by ID"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        # Get the image path for file deletion
+        cursor.execute('SELECT image_path, cat_id FROM cat_reference_images WHERE id = ?', (reference_id,))
+        result = cursor.fetchone()
+        if not result:
+            conn.close()
+            return False
+        
+        image_path, cat_id = result
+        
+        # Delete from database
+        cursor.execute('DELETE FROM cat_reference_images WHERE id = ?', (reference_id,))
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        # Delete file if it exists
+        if deleted and image_path:
+            try:
+                full_path = os.path.join('.', image_path)
+                if os.path.exists(full_path):
+                    os.remove(full_path)
+            except Exception as e:
+                print(f"Warning: Could not delete image file {image_path}: {e}")
+        
+        return deleted
+
+    def update_reference_image_order(self, cat_id: int, reference_orders: List[Dict]) -> bool:
+        """Update order_index for multiple reference images. reference_orders is a list of {id: order_index}"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            for ref_order in reference_orders:
+                ref_id = ref_order.get('id')
+                order_index = ref_order.get('order_index', 0)
+                if ref_id:
+                    cursor.execute(
+                        'UPDATE cat_reference_images SET order_index = ? WHERE id = ? AND cat_id = ?',
+                        (order_index, ref_id, cat_id)
+                    )
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            print(f"Error updating reference image order: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def move_reference_image(self, reference_id: int, new_cat_id: int) -> bool:
+        """Move a reference image from one cat to another"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            # Get max order_index for the new cat
+            cursor.execute('SELECT COALESCE(MAX(order_index), -1) FROM cat_reference_images WHERE cat_id = ?', (new_cat_id,))
+            max_order = cursor.fetchone()[0] or -1
+            new_order = max_order + 1
+            
+            # Update the cat_id and order_index
+            cursor.execute(
+                'UPDATE cat_reference_images SET cat_id = ?, order_index = ? WHERE id = ?',
+                (new_cat_id, new_order, reference_id)
+            )
+            moved = cursor.rowcount > 0
+            conn.commit()
+            return moved
+        except Exception as e:
+            conn.rollback()
+            print(f"Error moving reference image: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def set_primary_reference_image(self, cat_id: int, reference_id: int) -> bool:
+        """Set a reference image as primary (and unset others for the same cat)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            # Unset all primary images for this cat
+            cursor.execute('UPDATE cat_reference_images SET is_primary = 0 WHERE cat_id = ?', (cat_id,))
+            # Set the specified one as primary
+            cursor.execute(
+                'UPDATE cat_reference_images SET is_primary = 1 WHERE id = ? AND cat_id = ?',
+                (reference_id, cat_id)
+            )
+            updated = cursor.rowcount > 0
+            conn.commit()
+            return updated
+        except Exception as e:
+            conn.rollback()
+            print(f"Error setting primary reference image: {e}")
+            return False
+        finally:
+            conn.close()
+
     def set_cat_adoption_state(self, cat_id: int, is_adopted: bool) -> None:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -1155,10 +1266,11 @@ class DatabaseManager:
                 cri.hash_length,
                 LENGTH(cri.embedding_vector) AS embedding_bytes,
                 cri.is_primary,
+                cri.order_index,
                 cri.created_at
             FROM cat_reference_images cri
             LEFT JOIN cats c ON c.id = cri.cat_id
-            ORDER BY cri.created_at DESC
+            ORDER BY cri.order_index ASC, cri.created_at DESC
         '''
         if limit:
             cursor.execute(f"{query} LIMIT ?", (limit,))
@@ -1609,6 +1721,27 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(400)
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": "Invalid cat ID"}).encode())
+        elif self.path.startswith('/api/admin/reference-images/') and '/move' in self.path:
+            # POST /api/admin/reference-images/{reference_id}/move
+            path_parts = [part for part in self.path.split('/') if part]
+            try:
+                reference_id = int(path_parts[3])
+                self.handle_move_reference_image(reference_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid reference image ID"}).encode())
+        elif self.path.startswith('/api/admin/cats/') and '/reference-images/' in self.path and '/set-primary' in self.path:
+            # POST /api/admin/cats/{cat_id}/reference-images/{reference_id}/set-primary
+            path_parts = [part for part in self.path.split('/') if part]
+            try:
+                cat_id = int(path_parts[3])
+                reference_id = int(path_parts[5])
+                self.handle_set_primary_reference_image(cat_id, reference_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid cat or reference image ID"}).encode())
         elif self.path == '/api/cats/recognize':
             self.handle_recognize_cat()
         elif self.path == '/api/admin/cat-recognition/settings':
@@ -1739,6 +1872,34 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 pass
             self.send_response(400)
             self.end_headers()
+        elif self.path.startswith('/api/admin/reference-images/') and self.path.endswith('/order'):
+            # PUT /api/admin/reference-images/{cat_id}/order
+            path_parts = [part for part in self.path.split('/') if part]
+            try:
+                cat_id = int(path_parts[3])
+                self.handle_update_reference_image_order(cat_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid cat ID"}).encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def do_DELETE(self):
+        """Handle DELETE requests"""
+        if self.path.startswith('/api/admin/reference-images/'):
+            path_parts = [part for part in self.path.split('/') if part]
+            try:
+                if len(path_parts) >= 4 and path_parts[0] == 'api' and path_parts[1] == 'admin' and path_parts[2] == 'reference-images':
+                    reference_id = int(path_parts[3])
+                    self.handle_delete_reference_image(reference_id)
+                    return
+            except (ValueError, IndexError):
+                pass
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid reference image ID"}).encode())
         else:
             self.send_response(404)
             self.end_headers()
@@ -2914,6 +3075,159 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps(references).encode())
+        except Exception as exc:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(exc)}).encode())
+
+    def handle_delete_reference_image(self, reference_id: int):
+        """Delete a reference image"""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            deleted = db.delete_reference_image(reference_id)
+            if deleted:
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": "Reference image deleted"}).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Reference image not found"}).encode())
+        except Exception as exc:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(exc)}).encode())
+
+    def handle_update_reference_image_order(self, cat_id: int):
+        """Update the order of reference images for a cat"""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+        except (TypeError, ValueError):
+            content_length = 0
+        payload = self.rfile.read(content_length) if content_length else b'{}'
+        try:
+            data = json.loads(payload.decode('utf-8'))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        reference_orders = data.get('orders', [])
+        if not isinstance(reference_orders, list):
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "orders must be a list"}).encode())
+            return
+
+        try:
+            success = db.update_reference_image_order(cat_id, reference_orders)
+            if success:
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": "Image order updated"}).encode())
+            else:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Failed to update order"}).encode())
+        except Exception as exc:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(exc)}).encode())
+
+    def handle_move_reference_image(self, reference_id: int):
+        """Move a reference image to a different cat"""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+        except (TypeError, ValueError):
+            content_length = 0
+        payload = self.rfile.read(content_length) if content_length else b'{}'
+        try:
+            data = json.loads(payload.decode('utf-8'))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        new_cat_id = data.get('new_cat_id')
+        if not new_cat_id:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "new_cat_id is required"}).encode())
+            return
+
+        try:
+            new_cat_id = int(new_cat_id)
+            # Verify the target cat exists
+            target_cat = db.get_cat_by_id(new_cat_id)
+            if not target_cat:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Target cat not found"}).encode())
+                return
+
+            success = db.move_reference_image(reference_id, new_cat_id)
+            if success:
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": "Image moved successfully"}).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Reference image not found"}).encode())
+        except ValueError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid cat ID"}).encode())
+        except Exception as exc:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(exc)}).encode())
+
+    def handle_set_primary_reference_image(self, cat_id: int, reference_id: int):
+        """Set a reference image as primary for a cat"""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            success = db.set_primary_reference_image(cat_id, reference_id)
+            if success:
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": "Primary image updated"}).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Reference image not found"}).encode())
         except Exception as exc:
             self.send_response(500)
             self.end_headers()

@@ -60,23 +60,188 @@
             border: 1px solid #ddd;
             border-radius: 4px;
         }
-        .reference-list {
-            max-height: 280px;
-            overflow-y: auto;
-            border: 1px solid #eee;
-            border-radius: 6px;
-            padding: 10px;
+        .image-gallery {
+            margin-top: 15px;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            padding: 15px;
             background-color: #fafafa;
+            min-height: 200px;
         }
-        .reference-item {
+        .image-gallery-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .image-gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .image-item {
+            position: relative;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #fff;
+            cursor: move;
+            transition: all 0.2s;
+        }
+        .image-item:hover {
+            border-color: #4CAF50;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        .image-item.dragging {
+            opacity: 0.5;
+            border-color: #4CAF50;
+        }
+        .image-item.primary {
+            border-color: #ff9800;
+            border-width: 3px;
+        }
+        .image-item img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            display: block;
+        }
+        .image-item-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .image-item:hover .image-item-overlay {
+            opacity: 1;
+        }
+        .image-item-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .image-item-btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: #fff;
+        }
+        .image-item-btn.delete {
+            background-color: #c0392b;
+        }
+        .image-item-btn.primary {
+            background-color: #ff9800;
+        }
+        .image-item-btn.move {
+            background-color: #3498db;
+        }
+        .image-item-info {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+            color: #fff;
+            padding: 8px;
+            font-size: 0.75rem;
+        }
+        .image-item-badge {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: #ff9800;
+            color: #fff;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+        .upload-area {
+            border: 2px dashed #4CAF50;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            background-color: #f0f8f0;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .upload-area:hover {
+            background-color: #e8f5e9;
+            border-color: #45a049;
+        }
+        .upload-area.dragover {
+            background-color: #c8e6c9;
+            border-color: #4CAF50;
+        }
+        .cat-drop-zone {
+            border: 2px dashed #3498db;
+            border-radius: 8px;
+            padding: 10px;
+            margin: 5px 0;
+            background-color: #ebf5fb;
+            text-align: center;
+            min-height: 60px;
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 6px 0;
-            border-bottom: 1px dashed #e0e0e0;
+            justify-content: center;
+            transition: all 0.2s;
         }
-        .reference-item:last-child {
-            border-bottom: none;
+        .cat-drop-zone.drag-over {
+            background-color: #d6eaf8;
+            border-color: #2980b9;
+        }
+        .move-image-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .move-image-modal.active {
+            display: flex;
+        }
+        .move-image-modal-content {
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .cat-select-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .cat-select-item {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .cat-select-item:hover {
+            background-color: #f0f0f0;
+            border-color: #4CAF50;
         }
         .actions {
             margin-top: 20px;
@@ -101,6 +266,7 @@
         }
         .status-success { background-color: #d4edda; color: #155724; }
         .status-error { background-color: #f8d7da; color: #721c24; }
+        .status-info { background-color: #d1ecf1; color: #0c5460; }
     </style>
 </head>
 <body>
@@ -180,15 +346,33 @@
                         <label><input type="checkbox" id="editAdopted"> 已被领养</label>
                     </div>
                     <div>
-                        <h3>参考图片</h3>
-                        <p>勾选要用于重新生成哈希值的参考图片。</p>
-                        <div class="reference-list" id="referenceList">
-                            <div style="text-align:center; color:#666;">加载中...</div>
+                        <div class="image-gallery-header">
+                            <h3 style="margin:0;">参考图片</h3>
+                            <button type="button" class="btn-secondary" onclick="regenerateHash()" style="padding:8px 16px; font-size:0.9rem;">重新生成哈希</button>
+                        </div>
+                        <div class="image-gallery" id="imageGallery">
+                            <div class="upload-area" id="uploadArea" onclick="document.getElementById('imageFileInput').click()">
+                                <input type="file" id="imageFileInput" multiple accept="image/*" style="display:none;" onchange="handleImageUpload(event)">
+                                <p style="margin:0; color:#4CAF50; font-weight:bold;">📤 点击或拖拽图片到这里上传</p>
+                                <p style="margin:5px 0 0 0; color:#666; font-size:0.9rem;">支持多选，可一次上传多张图片</p>
+                            </div>
+                            <div class="image-gallery-grid" id="imageGalleryGrid">
+                                <div style="text-align:center; color:#666; grid-column:1/-1; padding:20px;">加载中...</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="moveImageModal" class="move-image-modal">
+                        <div class="move-image-modal-content">
+                            <h3>选择目标猫咪</h3>
+                            <p>将图片移动到哪个猫咪的档案？</p>
+                            <div class="cat-select-list" id="catSelectList"></div>
+                            <div style="margin-top:15px; display:flex; gap:10px; justify-content:flex-end;">
+                                <button type="button" class="btn-secondary" onclick="closeMoveModal()">取消</button>
+                            </div>
                         </div>
                     </div>
                     <div class="actions">
                         <button type="button" class="btn-primary" onclick="saveCatChanges()">保存修改</button>
-                        <button type="button" class="btn-secondary" onclick="regenerateHash()">重新生成哈希</button>
                     </div>
                     <div class="status-area" id="editorStatus"></div>
                 </form>
@@ -199,6 +383,9 @@
     <script>
         let editorCats = [];
         let selectedCatId = null;
+        let currentReferenceImages = [];
+        let draggedImageId = null;
+        let moveImageTargetId = null;
 
         document.addEventListener('DOMContentLoaded', () => {
             checkAdminAccess()
@@ -303,22 +490,294 @@
         }
 
         function renderReferenceList(references) {
-            const list = document.getElementById('referenceList');
-            if (!references.length) {
-                list.innerHTML = '<div style="text-align:center; color:#666;">暂无参考图片</div>';
+            currentReferenceImages = references || [];
+            const grid = document.getElementById('imageGalleryGrid');
+            const uploadArea = document.getElementById('uploadArea');
+            
+            if (!references || references.length === 0) {
+                grid.innerHTML = '<div style="text-align:center; color:#666; grid-column:1/-1; padding:20px;">暂无参考图片，请上传图片</div>';
+                uploadArea.style.display = 'block';
                 return;
             }
-            list.innerHTML = '';
-            references.forEach(ref => {
+            
+            uploadArea.style.display = 'block';
+            grid.innerHTML = '';
+            
+            // Sort by order_index
+            const sortedRefs = [...references].sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+            
+            sortedRefs.forEach((ref, index) => {
                 const item = document.createElement('div');
-                item.className = 'reference-item';
+                item.className = `image-item ${ref.is_primary ? 'primary' : ''}`;
+                item.draggable = true;
+                item.dataset.imageId = ref.id;
+                item.dataset.orderIndex = ref.order_index || index;
+                
+                const imageUrl = `/${ref.image_path}`;
+                const imageName = ref.image_path ? ref.image_path.split('/').pop() : `Image #${ref.id}`;
+                
                 item.innerHTML = `
-                    <label style="display:flex; align-items:center; gap:8px;">
-                        <input type="checkbox" value="${ref.id}" class="reference-checkbox" checked>
-                        <span>#${ref.id} ${ref.image_path || ''}</span>
-                    </label>
+                    ${ref.is_primary ? '<div class="image-item-badge">主图</div>' : ''}
+                    <img src="${imageUrl}" alt="${imageName}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'150\' height=\'150\'%3E%3Crect fill=\'%23ddd\' width=\'150\' height=\'150\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\'%3E图片加载失败%3C/text%3E%3C/svg%3E'">
+                    <div class="image-item-overlay">
+                        <div class="image-item-actions">
+                            ${!ref.is_primary ? `<button class="image-item-btn primary" onclick="setPrimaryImage(${ref.id})" title="设为主图">设为主图</button>` : ''}
+                            <button class="image-item-btn move" onclick="openMoveModal(${ref.id})" title="移动到其他猫咪">移动</button>
+                            <button class="image-item-btn delete" onclick="deleteImage(${ref.id})" title="删除">删除</button>
+                        </div>
+                    </div>
+                    <div class="image-item-info">
+                        <div>#${ref.id} ${imageName}</div>
+                        <div style="font-size:0.7rem; opacity:0.8;">哈希: ${ref.hash_length || 'N/A'}位</div>
+                    </div>
                 `;
+                
+                // Drag and drop handlers
+                item.addEventListener('dragstart', handleDragStart);
+                item.addEventListener('dragover', handleDragOver);
+                item.addEventListener('drop', handleDrop);
+                item.addEventListener('dragend', handleDragEnd);
+                
+                grid.appendChild(item);
+            });
+            
+            setupUploadDragDrop();
+        }
+        
+        function handleDragStart(e) {
+            draggedImageId = parseInt(e.target.closest('.image-item').dataset.imageId);
+            e.target.closest('.image-item').classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+        
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const targetItem = e.target.closest('.image-item');
+            if (targetItem && targetItem.dataset.imageId != draggedImageId) {
+                targetItem.style.borderColor = '#4CAF50';
+            }
+        }
+        
+        function handleDrop(e) {
+            e.preventDefault();
+            const targetItem = e.target.closest('.image-item');
+            if (!targetItem || !draggedImageId) return;
+            
+            const targetId = parseInt(targetItem.dataset.imageId);
+            if (targetId === draggedImageId) return;
+            
+            // Reorder images
+            const draggedIndex = currentReferenceImages.findIndex(r => r.id === draggedImageId);
+            const targetIndex = currentReferenceImages.findIndex(r => r.id === targetId);
+            
+            if (draggedIndex === -1 || targetIndex === -1) return;
+            
+            // Swap order
+            const dragged = currentReferenceImages[draggedIndex];
+            const target = currentReferenceImages[targetIndex];
+            const tempOrder = dragged.order_index || draggedIndex;
+            dragged.order_index = target.order_index || targetIndex;
+            target.order_index = tempOrder;
+            
+            // Update order in database
+            updateImageOrder();
+        }
+        
+        function handleDragEnd(e) {
+            e.target.closest('.image-item')?.classList.remove('dragging');
+            document.querySelectorAll('.image-item').forEach(item => {
+                item.style.borderColor = '';
+            });
+            draggedImageId = null;
+        }
+        
+        function updateImageOrder() {
+            if (!selectedCatId) return;
+            
+            const orders = currentReferenceImages.map((ref, index) => ({
+                id: ref.id,
+                order_index: ref.order_index !== undefined ? ref.order_index : index
+            }));
+            
+            fetch(`/api/admin/reference-images/${selectedCatId}/order`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orders })
+            })
+            .then(res => res.json().then(data => ({ ok: res.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    loadCatDetail(selectedCatId); // Reload to refresh display
+                } else {
+                    throw new Error(data.error || '更新顺序失败');
+                }
+            })
+            .catch(err => {
+                console.error('update order error', err);
+                setEditorStatus('更新图片顺序失败', 'error');
+            });
+        }
+        
+        function deleteImage(referenceId) {
+            if (!confirm('确定要删除这张图片吗？此操作不可恢复。')) return;
+            
+            fetch(`/api/admin/reference-images/${referenceId}`, {
+                method: 'DELETE'
+            })
+            .then(res => res.json().then(data => ({ ok: res.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    setEditorStatus('图片已删除', 'success');
+                    loadCatDetail(selectedCatId);
+                } else {
+                    throw new Error(data.error || '删除失败');
+                }
+            })
+            .catch(err => {
+                console.error('delete image error', err);
+                setEditorStatus('删除图片失败', 'error');
+            });
+        }
+        
+        function setPrimaryImage(referenceId) {
+            if (!selectedCatId) return;
+            
+            fetch(`/api/admin/cats/${selectedCatId}/reference-images/${referenceId}/set-primary`, {
+                method: 'POST'
+            })
+            .then(res => res.json().then(data => ({ ok: res.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    setEditorStatus('主图已更新', 'success');
+                    loadCatDetail(selectedCatId);
+                } else {
+                    throw new Error(data.error || '设置主图失败');
+                }
+            })
+            .catch(err => {
+                console.error('set primary error', err);
+                setEditorStatus('设置主图失败', 'error');
+            });
+        }
+        
+        function openMoveModal(referenceId) {
+            moveImageTargetId = referenceId;
+            const modal = document.getElementById('moveImageModal');
+            const list = document.getElementById('catSelectList');
+            
+            list.innerHTML = '';
+            editorCats.forEach(cat => {
+                if (cat.id === selectedCatId) return; // Skip current cat
+                const item = document.createElement('div');
+                item.className = 'cat-select-item';
+                item.innerHTML = `
+                    <strong>${cat.name || '未命名'}</strong> (ID: ${cat.id})
+                    ${cat.is_adopted ? '<span style="color:#999; margin-left:10px;">[已领养]</span>' : ''}
+                `;
+                item.onclick = () => moveImageToCat(referenceId, cat.id);
                 list.appendChild(item);
+            });
+            
+            if (list.children.length === 0) {
+                list.innerHTML = '<div style="text-align:center; color:#666; padding:20px;">没有其他猫咪档案</div>';
+            }
+            
+            modal.classList.add('active');
+            
+            // Close modal when clicking outside
+            modal.onclick = (e) => {
+                if (e.target === modal) {
+                    closeMoveModal();
+                }
+            };
+        }
+        
+        function closeMoveModal() {
+            document.getElementById('moveImageModal').classList.remove('active');
+            moveImageTargetId = null;
+        }
+        
+        function moveImageToCat(referenceId, newCatId) {
+            fetch(`/api/admin/reference-images/${referenceId}/move`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_cat_id: newCatId })
+            })
+            .then(res => res.json().then(data => ({ ok: res.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    setEditorStatus('图片已移动到其他猫咪档案', 'success');
+                    closeMoveModal();
+                    loadCatDetail(selectedCatId);
+                } else {
+                    throw new Error(data.error || '移动失败');
+                }
+            })
+            .catch(err => {
+                console.error('move image error', err);
+                setEditorStatus('移动图片失败', 'error');
+            });
+        }
+        
+        function setupUploadDragDrop() {
+            const uploadArea = document.getElementById('uploadArea');
+            
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+            
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('dragover');
+            });
+            
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+                if (files.length > 0) {
+                    uploadImages(files);
+                }
+            });
+        }
+        
+        function handleImageUpload(event) {
+            const files = Array.from(event.target.files).filter(f => f.type.startsWith('image/'));
+            if (files.length > 0) {
+                uploadImages(files);
+            }
+            event.target.value = ''; // Reset input
+        }
+        
+        function uploadImages(files) {
+            if (!selectedCatId) {
+                setEditorStatus('请先选择一只猫咪', 'error');
+                return;
+            }
+            
+            setEditorStatus('正在上传图片...', 'info');
+            
+            const formData = new FormData();
+            files.forEach(file => formData.append('images', file));
+            formData.append('primary_index', '-1'); // Don't auto-set primary
+            
+            fetch(`/api/admin/cat-profiles/${selectedCatId}/reference-images`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json().then(data => ({ ok: res.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    setEditorStatus(`成功上传 ${files.length} 张图片`, 'success');
+                    loadCatDetail(selectedCatId);
+                } else {
+                    throw new Error(data.error || '上传失败');
+                }
+            })
+            .catch(err => {
+                console.error('upload error', err);
+                setEditorStatus('上传图片失败', 'error');
             });
         }
 
@@ -363,18 +822,22 @@
 
         function regenerateHash() {
             if (!selectedCatId) return;
-            const checkedRefs = Array.from(document.querySelectorAll('.reference-checkbox'))
-                .filter(cb => cb.checked)
-                .map(cb => parseInt(cb.value, 10));
+            if (!currentReferenceImages || currentReferenceImages.length === 0) {
+                setEditorStatus('没有可用的参考图片', 'error');
+                return;
+            }
+            // Regenerate hash for all images
+            const allRefIds = currentReferenceImages.map(ref => ref.id);
             fetch(`/api/admin/cats/${selectedCatId}/regenerate-hash`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ reference_ids: checkedRefs })
+                body: JSON.stringify({ reference_ids: allRefIds })
             })
             .then(res => res.json().then(data => ({ ok: res.ok, data })))
             .then(({ ok, data }) => {
                 if (ok) {
                     setEditorStatus('哈希值已重新生成', 'success');
+                    loadCatDetail(selectedCatId);
                 } else {
                     throw new Error(data.error || '操作失败');
                 }
@@ -393,7 +856,8 @@
                 return;
             }
             status.textContent = message;
-            status.className = `status-area ${type === 'error' ? 'status-error' : 'status-success'}`;
+            const typeClass = type === 'error' ? 'status-error' : (type === 'info' ? 'status-info' : 'status-success');
+            status.className = `status-area ${typeClass}`;
             status.style.display = 'block';
         }
     </script>
