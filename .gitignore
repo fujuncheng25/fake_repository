@@ -5,6 +5,8 @@ models/cat_face/
 # Log files
 *.log
 
+*.pth
+
 # Environment files
 .env
 
