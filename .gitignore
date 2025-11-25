@@ -1,7 +1,7 @@
 # Database
 data/
 *.db
-
+models/cat_face/
 # Log files
 *.log
 
