@@ -1043,6 +1043,36 @@ class DatabaseManager:
         conn.close()
         return results
 
+    def update_cat_reference_image_embedding(
+        self,
+        reference_id: int,
+        hash_hex: str,
+        hash_length: int,
+        embedding_bytes: bytes,
+    ) -> bool:
+        """Update the embedding and hash for a reference image"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            UPDATE cat_reference_images
+            SET hash_hex = ?,
+                hash_length = ?,
+                embedding_vector = ?
+            WHERE id = ?
+        ''',
+            (
+                hash_hex,
+                hash_length,
+                sqlite3.Binary(embedding_bytes),
+                reference_id,
+            ),
+        )
+        updated = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return updated
+
     def refresh_cat_signature(self, cat_id: int, aggregated_hash_hex: Optional[str], hash_length: Optional[int], embedding_bytes: Optional[bytes]) -> None:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -1227,6 +1257,56 @@ def create_cat_recognizer_from_settings() -> CatFaceRecognizer:
     return recognizer
 
 cat_recognizer = create_cat_recognizer_from_settings()
+
+def reprocess_reference_images(cat_id: int, reference_ids: Optional[List[int]] = None) -> int:
+    """
+    Reprocess reference images through the current model and update their embeddings.
+    Returns the number of images successfully reprocessed.
+    """
+    global cat_recognizer
+    # Refresh recognizer to ensure we're using the latest model settings
+    cat_recognizer = create_cat_recognizer_from_settings()
+    
+    references = db.get_cat_reference_images(cat_id, include_embedding=False, reference_ids=reference_ids)
+    if not references:
+        return 0
+    
+    reprocessed_count = 0
+    for reference in references:
+        reference_id = reference.get('id')
+        image_path = reference.get('image_path')
+        
+        if not image_path or not reference_id:
+            continue
+        
+        # Read image file from disk
+        if not os.path.exists(image_path):
+            print(f"[Reprocess] Image file not found: {image_path}")
+            continue
+        
+        try:
+            with open(image_path, 'rb') as f:
+                image_bytes = f.read()
+            
+            # Process through current model
+            embedding, hash_hex, hash_bits = cat_recognizer.compute_signature(image_bytes)
+            hash_length = int(hash_bits.size)
+            
+            # Update database
+            success = db.update_cat_reference_image_embedding(
+                reference_id=reference_id,
+                hash_hex=hash_hex,
+                hash_length=hash_length,
+                embedding_bytes=embedding_to_blob(embedding),
+            )
+            
+            if success:
+                reprocessed_count += 1
+        except Exception as exc:
+            print(f"[Reprocess] Failed to reprocess reference {reference_id}: {exc}")
+            continue
+    
+    return reprocessed_count
 
 def recompute_cat_signature(cat_id: int, reference_ids: Optional[List[int]] = None) -> None:
     references = db.get_cat_reference_images(cat_id, include_embedding=True, reference_ids=reference_ids)
@@ -1585,6 +1665,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(400)
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": "Invalid cat ID"}).encode())
+        elif self.path == '/api/admin/cats/reprocess-all':
+            self.handle_reprocess_all_cats()
         elif self.path == '/api/messages/broadcast':
             self.handle_broadcast_message()
         elif self.path.startswith('/api/messages/') and self.path.endswith('/read'):
@@ -2366,7 +2448,7 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps({"message": "Cat updated", "cat": cat}).encode())
 
     def handle_regenerate_cat_hash(self, cat_id: int):
-        """Regenerate aggregate hash using selected references"""
+        """Regenerate aggregate hash by reprocessing images through current model"""
         user = self.get_current_user()
         if not user or not user.get('is_admin'):
             self.send_response(403)
@@ -2388,28 +2470,28 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         reference_ids = data.get('reference_ids')
-        references = None
         if reference_ids is not None:
             if not isinstance(reference_ids, list) or not all(isinstance(rid, int) for rid in reference_ids):
                 self.send_response(400)
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": "reference_ids must be a list of integers"}).encode())
                 return
-            references = db.get_cat_reference_images(cat_id, include_embedding=True, reference_ids=reference_ids)
-            if not references:
+
+        # Reprocess images through current model
+        try:
+            reprocessed_count = reprocess_reference_images(cat_id, reference_ids=reference_ids)
+            if reprocessed_count == 0:
                 self.send_response(400)
                 self.end_headers()
-                self.wfile.write(json.dumps({"error": "Selected reference images not found"}).encode())
+                self.wfile.write(json.dumps({"error": "No reference images could be reprocessed"}).encode())
                 return
-        else:
-            references = db.get_cat_reference_images(cat_id, include_embedding=True)
-
-        if not references:
-            self.send_response(400)
+        except Exception as exc:
+            self.send_response(500)
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "No reference images available"}).encode())
+            self.wfile.write(json.dumps({"error": f"Failed to reprocess images: {exc}"}).encode())
             return
 
+        # Recompute aggregated signature from the newly processed embeddings
         ids = reference_ids if reference_ids else None
         recompute_cat_signature(cat_id, reference_ids=ids)
         cat = sanitize_cat_record(db.get_cat_by_id(cat_id))
@@ -2417,7 +2499,58 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
-        self.wfile.write(json.dumps({"message": "Hash regenerated", "cat": cat}).encode())
+        self.wfile.write(json.dumps({
+            "message": f"Hash regenerated ({reprocessed_count} images reprocessed)",
+            "cat": cat,
+            "reprocessed_count": reprocessed_count
+        }).encode())
+
+    def handle_reprocess_all_cats(self):
+        """Reprocess all reference images for all cats through the current model"""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            # Get all cats
+            cats = db.get_all_cats_admin()
+            total_cats = 0
+            total_images = 0
+            failed_cats = []
+            
+            for cat in cats:
+                cat_id = cat.get('id')
+                if not cat_id:
+                    continue
+                
+                try:
+                    # Reprocess all reference images for this cat
+                    reprocessed_count = reprocess_reference_images(cat_id, reference_ids=None)
+                    if reprocessed_count > 0:
+                        # Recompute aggregated signature
+                        recompute_cat_signature(cat_id, reference_ids=None)
+                        total_cats += 1
+                        total_images += reprocessed_count
+                except Exception as exc:
+                    cat_name = cat.get('name', f'Cat {cat_id}')
+                    failed_cats.append({"cat_id": cat_id, "name": cat_name, "error": str(exc)})
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "message": f"Reprocessing completed: {total_cats} cats, {total_images} images reprocessed",
+                "total_cats": total_cats,
+                "total_images": total_images,
+                "failed_cats": failed_cats
+            }).encode())
+        except Exception as exc:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": f"Failed to reprocess all cats: {exc}"}).encode())
 
     def handle_get_cat_profiles_admin(self):
         """Return detailed cat profiles for the admin console."""

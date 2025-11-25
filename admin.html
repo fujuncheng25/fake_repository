@@ -722,6 +722,7 @@
                                     <input type="number" id="recognitionHashLength" min="64" step="1" placeholder="留空使用默认长度">
                                 </label>
                                 <button type="button" id="saveRecognitionSettingsBtn" class="btn btn-primary">保存识别设置</button>
+                                <button type="button" id="reprocessAllCatsBtn" class="btn btn-secondary" style="margin-top: 10px;">重新处理所有猫咪图像</button>
                                 <div id="recognitionSettingsStatus" class="status-bar"></div>
                                 <div id="recognitionStats" class="info-note"></div>
                             </div>
@@ -1074,6 +1075,10 @@
             const saveRecognitionSettingsBtn = document.getElementById('saveRecognitionSettingsBtn');
             if (saveRecognitionSettingsBtn) {
                 saveRecognitionSettingsBtn.addEventListener('click', saveRecognitionSettings);
+            }
+            const reprocessAllCatsBtn = document.getElementById('reprocessAllCatsBtn');
+            if (reprocessAllCatsBtn) {
+                reprocessAllCatsBtn.addEventListener('click', reprocessAllCats);
             }
         });
 
@@ -2400,6 +2405,51 @@
             })
             .catch(error => {
                 updateStatusBar('recognitionSettingsStatus', error.message, 'error');
+            });
+        }
+
+        function reprocessAllCats() {
+            if (!confirm('确定要重新处理所有猫咪的图像吗？这将使用当前模型重新计算所有参考图像的嵌入和哈希值。此操作可能需要一些时间。')) {
+                return;
+            }
+            
+            const btn = document.getElementById('reprocessAllCatsBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '处理中...';
+            }
+            
+            updateStatusBar('recognitionSettingsStatus', '正在重新处理所有猫咪图像，请稍候...', 'info');
+            
+            fetch('/api/admin/cats/reprocess-all', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include'
+            })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok) {
+                    throw new Error(data.error || '重新处理失败');
+                }
+                updateStatusBar('recognitionSettingsStatus', 
+                    `重新处理完成：${data.total_cats} 只猫咪，${data.total_images} 张图像已重新处理。`, 
+                    'success');
+                showActionMessage(`已重新处理 ${data.total_cats} 只猫咪的图像。`, 'success');
+                if (data.failed_cats && data.failed_cats.length > 0) {
+                    console.warn('Failed cats:', data.failed_cats);
+                }
+                loadRecognitionCatProfiles();
+            })
+            .catch(error => {
+                updateStatusBar('recognitionSettingsStatus', error.message, 'error');
+            })
+            .finally(() => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '重新处理所有猫咪图像';
+                }
             });
         }
 
