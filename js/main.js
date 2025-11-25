@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setupRecognition();
     setupCatSearch();
     setupAdoptionModal();
+    setupMobileCommandCenter();
 });
 
 let recognitionStream = null;
@@ -24,6 +25,15 @@ let recognitionCanvas = null;
 let recognitionStatusEl = null;
 let recognitionResultsEl = null;
 let recognitionFileInput = null;
+let mobileCommandVideo = null;
+let mobileCommandCanvas = null;
+let mobileCommandStream = null;
+let mobileCommandPanel = null;
+let mobileStatusEl = null;
+let mobileReportEl = null;
+let mobileLogEl = null;
+let mobileAutoActive = false;
+let mobileAutoTimer = null;
 let allCats = [];
 let filteredCats = [];
 let currentUser = null;
@@ -596,6 +606,262 @@ function loadMoreCats() {
     // 在实际应用中，这里会从服务器获取更多数据
 }
 
+// ---------------- 移动指挥面板（移动端专属） ----------------
+
+function setupMobileCommandCenter() {
+    if (!shouldActivateMobileUI()) {
+        return;
+    }
+    if (document.getElementById('mobileCommandCenter')) {
+        return;
+    }
+
+    document.body.classList.add('mobile-ui-active');
+    injectMobileCommandMarkup();
+
+    mobileCommandPanel = document.getElementById('mobileCommandPanel');
+    mobileCommandVideo = document.getElementById('mobileCommandVideo');
+    mobileCommandCanvas = document.getElementById('mobileCommandCanvas');
+    mobileStatusEl = document.getElementById('mobileStatus');
+    mobileReportEl = document.getElementById('mobileReport');
+    mobileLogEl = document.getElementById('mobileLog');
+
+    const autoBtn = document.getElementById('mobileAutoBtn');
+    const snapBtn = document.getElementById('mobileSnapBtn');
+    const retreatBtn = document.getElementById('mobileRetreatBtn');
+
+    autoBtn.addEventListener('click', () => toggleMobileAuto(autoBtn));
+    snapBtn.addEventListener('click', () => captureMobileSnapshot());
+    retreatBtn.addEventListener('click', () => {
+        if (mobileCommandPanel) {
+            mobileCommandPanel.classList.toggle('collapsed');
+        }
+    });
+
+    window.addEventListener('beforeunload', stopMobileCamera);
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopMobileCamera();
+        }
+    });
+}
+
+function shouldActivateMobileUI() {
+    const userAgentMobile = /Mobile|Android|iP(ad|hone|od)/i.test(navigator.userAgent);
+    const touchCapable = ('ontouchstart' in window) || navigator.maxTouchPoints > 1;
+    const narrowViewport = window.matchMedia('(max-width: 768px)').matches;
+    return userAgentMobile || (touchCapable && narrowViewport);
+}
+
+function injectMobileCommandMarkup() {
+    if (document.getElementById('mobileCommandCenter')) {
+        return;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = `
+        <div class="mobile-command-center" id="mobileCommandCenter" aria-live="polite">
+            <div class="mobile-panel" id="mobileCommandPanel">
+                <div class="mobile-panel-header">
+                    <div>
+                        <span class="mobile-chip">CATalist</span>
+                        <h3>巡航识别面板</h3>
+                    </div>
+                    <button id="mobileRetreatBtn" class="mobile-retreat-btn" aria-label="收起巡航面板">↘</button>
+                </div>
+                <div class="mobile-body">
+                    <div class="mobile-viewfinder">
+                        <video id="mobileCommandVideo" autoplay muted playsinline></video>
+                        <canvas id="mobileCommandCanvas" width="640" height="480" style="display:none;"></canvas>
+                        <div class="mobile-scan-veil"></div>
+                    </div>
+                    <div class="mobile-controls">
+                        <button id="mobileAutoBtn" class="primary">开始巡航</button>
+                        <button id="mobileSnapBtn" class="secondary">即时识别</button>
+                    </div>
+                    <div class="mobile-status" id="mobileStatus">待命中…</div>
+                    <div class="mobile-report" id="mobileReport">尚未识别到猫咪。</div>
+                    <div class="mobile-log" id="mobileLog">
+                        <p>系统已部署，等待启动。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(wrapper.firstElementChild);
+}
+
+function toggleMobileAuto(autoBtn) {
+    if (!mobileAutoActive) {
+        startMobileCamera()
+            .then(() => {
+                mobileAutoActive = true;
+                autoBtn.textContent = '暂停巡航';
+                updateMobileStatus('自动巡航已开启。', 'success');
+                appendMobileLog('启动连续巡航识别。');
+                startMobileAutoLoop();
+            })
+            .catch(() => {});
+    } else {
+        mobileAutoActive = false;
+        autoBtn.textContent = '开始巡航';
+        clearInterval(mobileAutoTimer);
+        mobileAutoTimer = null;
+        updateMobileStatus('巡航已暂停，可随时手动识别。', 'info');
+        appendMobileLog('巡航暂停，等待下一次指令。');
+    }
+}
+
+function captureMobileSnapshot() {
+    startMobileCamera()
+        .then(() => {
+            mobileAutoActive = false;
+            const autoBtn = document.getElementById('mobileAutoBtn');
+            if (autoBtn) {
+                autoBtn.textContent = '开始巡航';
+            }
+            clearInterval(mobileAutoTimer);
+            mobileAutoTimer = null;
+            captureMobileFrame(true);
+        })
+        .catch(() => {});
+}
+
+function startMobileCamera() {
+    if (mobileCommandStream) {
+        return Promise.resolve();
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        updateMobileStatus('当前浏览器不支持摄像头访问。', 'error');
+        appendMobileLog('无法开启摄像头，请尝试使用桌面模式。');
+        return Promise.reject(new Error('unsupported'));
+    }
+    updateMobileStatus('正在唤醒摄像头…', 'info');
+    return navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+        .then(stream => {
+            mobileCommandStream = stream;
+            if (mobileCommandVideo) {
+                mobileCommandVideo.srcObject = stream;
+                mobileCommandVideo.play();
+            }
+            appendMobileLog('摄像头已上线。');
+            return stream;
+        })
+        .catch(error => {
+            console.error('Mobile camera error:', error);
+            updateMobileStatus('无法开启摄像头，请检查权限。', 'error');
+            appendMobileLog('摄像头访问被拒绝。');
+            throw error;
+        });
+}
+
+function startMobileAutoLoop() {
+    clearInterval(mobileAutoTimer);
+    mobileAutoTimer = setInterval(() => {
+        if (mobileAutoActive) {
+            captureMobileFrame(false);
+        }
+    }, 4500);
+    captureMobileFrame(false);
+}
+
+function stopMobileCamera() {
+    if (mobileCommandStream) {
+        mobileCommandStream.getTracks().forEach(track => track.stop());
+        mobileCommandStream = null;
+    }
+    if (mobileCommandVideo) {
+        mobileCommandVideo.srcObject = null;
+    }
+    clearInterval(mobileAutoTimer);
+    mobileAutoTimer = null;
+    mobileAutoActive = false;
+}
+
+function captureMobileFrame(manual = false) {
+    if (!mobileCommandStream || !mobileCommandVideo || !mobileCommandCanvas) {
+        updateMobileStatus('摄像头未就绪。', 'error');
+        return;
+    }
+    if (!mobileCommandVideo.videoWidth || !mobileCommandVideo.videoHeight) {
+        updateMobileStatus('正在对焦，请稍后。', 'info');
+        return;
+    }
+
+    mobileCommandCanvas.width = mobileCommandVideo.videoWidth;
+    mobileCommandCanvas.height = mobileCommandVideo.videoHeight;
+    const ctx = mobileCommandCanvas.getContext('2d');
+    if (!ctx) {
+        updateMobileStatus('画面不可用。', 'error');
+        return;
+    }
+    ctx.drawImage(mobileCommandVideo, 0, 0, mobileCommandCanvas.width, mobileCommandCanvas.height);
+
+    mobileCommandCanvas.toBlob(blob => {
+        if (!blob) {
+            updateMobileStatus('采样失败，请重试。', 'error');
+            return;
+        }
+        recognizeCatImage(blob, manual ? 'mobile-manual' : 'mobile-auto', {
+            onStatus: updateMobileStatus,
+            onResults: handleMobileRecognitionResults
+        });
+        appendMobileLog(manual ? '执行一次手动识别。' : '巡航识别已提交。');
+    }, 'image/jpeg', 0.9);
+}
+
+function updateMobileStatus(message, type = 'info') {
+    if (!mobileStatusEl) return;
+    mobileStatusEl.textContent = message || '';
+    mobileStatusEl.classList.remove('status-info', 'status-success', 'status-error');
+    mobileStatusEl.classList.add(`status-${type}`);
+}
+
+function updateMobileReport(message, type = 'info') {
+    if (!mobileReportEl) return;
+    mobileReportEl.textContent = message || '';
+    mobileReportEl.classList.remove('status-info', 'status-success', 'status-error');
+    mobileReportEl.classList.add(`status-${type}`);
+}
+
+function appendMobileLog(message) {
+    if (!mobileLogEl) return;
+    const entry = document.createElement('p');
+    const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    entry.textContent = `[${timestamp}] ${message}`;
+    mobileLogEl.prepend(entry);
+    while (mobileLogEl.children.length > 5) {
+        mobileLogEl.removeChild(mobileLogEl.lastChild);
+    }
+}
+
+function handleMobileRecognitionResults(result) {
+    if (!result) {
+        updateMobileReport('识别失败，请稍后再试。', 'error');
+        return;
+    }
+    const matches = Array.isArray(result.matches) ? result.matches : [];
+    if (!matches.length) {
+        updateMobileReport('未识别到已登记的猫咪。', 'info');
+        appendMobileLog('暂无匹配结果。');
+        return;
+    }
+    const topMatch = matches[0];
+    reportMobileRecognition(topMatch);
+}
+
+function reportMobileRecognition(match) {
+    const cat = match && match.cat ? match.cat : null;
+    const name = cat && cat.name ? cat.name : '未知猫咪';
+    const similarity = typeof match.similarity === 'number' ? `${Math.round(match.similarity * 100)}%` : '未知';
+    const location = cat && cat.last_known_location ? cat.last_known_location : '位置待补充';
+    const message = `识别报告 · ${name} · 匹配度 ${similarity} · 最近位置 ${location}`;
+    updateMobileReport(message, 'success');
+    appendMobileLog(`识别命中：${name}（${similarity}）。`);
+    if (navigator.vibrate) {
+        navigator.vibrate(120);
+    }
+}
+
 // ---------------- 猫脸识别功能 ----------------
 
 function setupRecognition() {
@@ -694,21 +960,29 @@ function handleRecognitionUpload() {
     recognizeCatImage(file, 'upload');
 }
 
-function recognizeCatImage(imageBlob, source) {
+function recognizeCatImage(imageBlob, source, options = {}) {
+    const statusEl = options.statusEl || recognitionStatusEl;
+    const statusHandler = typeof options.onStatus === 'function'
+        ? options.onStatus
+        : (message, type) => setRecognitionStatus(message, type, statusEl);
+    const onResults = typeof options.onResults === 'function'
+        ? options.onResults
+        : (data) => renderRecognitionResults(data);
+
     const formData = new FormData();
     const filename = source === 'camera' ? `capture-${Date.now()}.jpg` : (imageBlob.name || `upload-${Date.now()}.jpg`);
     formData.append('image', imageBlob, filename);
 
-    setRecognitionStatus('正在识别，请稍候…', 'info');
+    statusHandler('正在识别，请稍候…', 'info');
 
-    fetch('/api/cats/recognize', {
+    return fetch('/api/cats/recognize', {
         method: 'POST',
         body: formData,
         credentials: 'include'
     })
     .then(response => {
         if (response.status === 401) {
-            setRecognitionStatus('请先登录后再使用猫脸识别功能。', 'error');
+            statusHandler('请先登录后再使用猫脸识别功能。', 'error');
             if (window.authSystem) {
                 window.authSystem.openModal('login');
             }
@@ -720,8 +994,8 @@ function recognizeCatImage(imageBlob, source) {
         if (!ok) {
             throw new Error(data.error || '识别失败，请稍后重试。');
         }
-        setRecognitionStatus('识别完成。', 'success');
-        renderRecognitionResults(data);
+        statusHandler('识别完成。', 'success');
+        onResults(data);
         if (source === 'upload' && recognitionFileInput) {
             recognitionFileInput.value = '';
         }
@@ -729,18 +1003,18 @@ function recognizeCatImage(imageBlob, source) {
     .catch(error => {
         if (error.message !== '未登录') {
             console.error('Recognition error:', error);
-            setRecognitionStatus(error.message || '识别失败，请稍后重试。', 'error');
+            statusHandler(error.message || '识别失败，请稍后重试。', 'error');
         }
     });
 }
 
-function renderRecognitionResults(result) {
-    if (!recognitionResultsEl) return;
-    recognitionResultsEl.innerHTML = '';
+function renderRecognitionResults(result, targetEl = recognitionResultsEl) {
+    if (!targetEl) return;
+    targetEl.innerHTML = '';
 
     const matches = result.matches || [];
     if (!matches.length) {
-        recognitionResultsEl.innerHTML = '<p class="recognition-placeholder">未找到匹配的猫咪信息。您可以将照片提交给管理员补充到数据库中。</p>';
+        targetEl.innerHTML = '<p class="recognition-placeholder">未找到匹配的猫咪信息。您可以将照片提交给管理员补充到数据库中。</p>';
         return;
     }
 
@@ -781,12 +1055,12 @@ function renderRecognitionResults(result) {
             `;
         }
 
-        recognitionResultsEl.appendChild(card);
+        targetEl.appendChild(card);
     });
 }
 
-function setRecognitionStatus(message, type = 'info') {
-    if (!recognitionStatusEl) return;
-    recognitionStatusEl.textContent = message || '';
-    recognitionStatusEl.className = `recognition-status ${type}`;
+function setRecognitionStatus(message, type = 'info', targetEl = recognitionStatusEl) {
+    if (!targetEl) return;
+    targetEl.textContent = message || '';
+    targetEl.className = `recognition-status ${type}`;
 }
