@@ -7,3 +7,6 @@ data/
 
 # Environment files
 .env
+
+models/cat_face/cat_resnet101_gpu_amp_final.pth
+
