@@ -269,6 +269,19 @@ class DatabaseManager:
             '''
             )
 
+        cursor.execute("SELECT COUNT(*) FROM content WHERE id = 'privacy_policy'")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                '''
+                INSERT INTO content (id, title, content)
+                VALUES (
+                    'privacy_policy',
+                    '隐私政策',
+                    '<h2>信息收集</h2><p>我们收集您在使用本网站时提供的信息，包括但不限于：</p><ul><li>注册时提供的姓名、邮箱地址等个人信息</li><li>上传的猫咪信息和照片</li><li>领养申请时提供的联系方式</li><li>网站使用数据和技术信息</li></ul><h2>信息使用</h2><p>我们使用收集的信息用于：</p><ul><li>提供和改善我们的服务</li><li>处理领养申请和用户请求</li><li>与您沟通，包括发送重要通知</li><li>保护网站安全和防止欺诈</li></ul><h2>信息保护</h2><p>我们采取适当的技术和管理措施来保护您的个人信息，防止未经授权的访问、使用或披露。</p><h2>信息共享</h2><p>我们不会向第三方出售、交易或转让您的个人信息，除非：</p><ul><li>获得您的明确同意</li><li>法律法规要求</li><li>保护我们的权利和财产</li></ul><h2>Cookie使用</h2><p>我们使用Cookie来改善用户体验，记住您的登录状态和偏好设置。</p><h2>您的权利</h2><p>您有权：</p><ul><li>访问和更新您的个人信息</li><li>要求删除您的个人信息</li><li>选择退出某些通信</li></ul><h2>联系我们</h2><p>如果您对本隐私政策有任何疑问，请通过<a href="/contact">联系我们</a>页面与我们联系。</p><h2>政策更新</h2><p>我们可能会不时更新本隐私政策。更新后的政策将在本页面发布，并更新"最后更新"日期。</p><p><em>最后更新：2025年1月</em></p>'
+                )
+            '''
+            )
+
     def _initialize_admin_user(self, cursor) -> None:
         cursor.execute("SELECT COUNT(*) FROM users WHERE is_admin = 1")
         if cursor.fetchone()[0] == 0:
@@ -2013,6 +2026,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.path = '/about.html'
             elif path == '/contact':
                 self.path = '/contact.html'
+            elif path == '/privacy':
+                self.path = '/privacy.html'
             elif path == '/content-management':
                 self.path = '/content-management.html'
             elif path == '/profile':

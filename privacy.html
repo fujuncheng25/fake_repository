@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>隐私政策 - 流浪猫公益项目</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .privacy-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .privacy-header {
+            background-color: #f5f5f5;
+            padding: 40px 20px;
+            text-align: center;
+            margin-bottom: 40px;
+            border-radius: 8px;
+        }
+        
+        .privacy-header h1 {
+            color: #4CAF50;
+            margin-bottom: 20px;
+        }
+        
+        .privacy-section {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .privacy-section h2 {
+            color: #4CAF50;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        
+        .privacy-section p {
+            line-height: 1.8;
+            margin-bottom: 15px;
+        }
+        
+        .privacy-section ul {
+            line-height: 1.8;
+            margin-bottom: 15px;
+            padding-left: 30px;
+        }
+        
+        .privacy-section li {
+            margin-bottom: 10px;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #4CAF50;
+            text-decoration: none;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>流浪猫公益项目</h1>
+            <nav>
+                <ul>
+                    <li><a href="/">首页</a></li>
+                    <li><a href="/#cats">猫咪信息</a></li>
+                    <li><a href="/messages">消息中心</a></li>
+                    <li><a href="/about">关于我们</a></li>
+                    <li><a href="/contact">联系我们</a></li>
+                </ul>
+            </nav>
+            <div class="auth-buttons">
+                <!-- Auth buttons will be populated by JavaScript -->
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="privacy-container">
+            <a href="/" class="back-link">← 返回首页</a>
+            
+            <div class="privacy-header">
+                <h1>隐私政策</h1>
+                <p>我们重视您的隐私，并致力于保护您的个人信息</p>
+            </div>
+            
+            <div class="privacy-section" id="privacy-content">
+                <p>加载中...</p>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 流浪猫公益项目. 保留所有权利. | <a href="/privacy" style="color: #4CAF50;">隐私政策</a></p>
+        </div>
+    </footer>
+
+    <script src="js/auth.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize auth system for this page
+            if (typeof AuthSystem !== 'undefined') {
+                window.authSystem = new AuthSystem();
+            }
+            
+            // Load privacy policy content
+            fetch('/api/content/privacy_policy')
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    } else {
+                        // If content doesn't exist, show default content
+                        return null;
+                    }
+                })
+                .then(content => {
+                    const contentDiv = document.getElementById('privacy-content');
+                    if (content && content.content) {
+                        // Render the content (supporting basic HTML)
+                        contentDiv.innerHTML = content.content;
+                    } else {
+                        // Default privacy policy content
+                        contentDiv.innerHTML = `
+                            <h2>信息收集</h2>
+                            <p>我们收集您在使用本网站时提供的信息，包括但不限于：</p>
+                            <ul>
+                                <li>注册时提供的姓名、邮箱地址等个人信息</li>
+                                <li>上传的猫咪信息和照片</li>
+                                <li>领养申请时提供的联系方式</li>
+                                <li>网站使用数据和技术信息</li>
+                            </ul>
+                            
+                            <h2>信息使用</h2>
+                            <p>我们使用收集的信息用于：</p>
+                            <ul>
+                                <li>提供和改善我们的服务</li>
+                                <li>处理领养申请和用户请求</li>
+                                <li>与您沟通，包括发送重要通知</li>
+                                <li>保护网站安全和防止欺诈</li>
+                            </ul>
+                            
+                            <h2>信息保护</h2>
+                            <p>我们采取适当的技术和管理措施来保护您的个人信息，防止未经授权的访问、使用或披露。</p>
+                            
+                            <h2>信息共享</h2>
+                            <p>我们不会向第三方出售、交易或转让您的个人信息，除非：</p>
+                            <ul>
+                                <li>获得您的明确同意</li>
+                                <li>法律法规要求</li>
+                                <li>保护我们的权利和财产</li>
+                            </ul>
+                            
+                            <h2>Cookie使用</h2>
+                            <p>我们使用Cookie来改善用户体验，记住您的登录状态和偏好设置。</p>
+                            
+                            <h2>您的权利</h2>
+                            <p>您有权：</p>
+                            <ul>
+                                <li>访问和更新您的个人信息</li>
+                                <li>要求删除您的个人信息</li>
+                                <li>选择退出某些通信</li>
+                            </ul>
+                            
+                            <h2>联系我们</h2>
+                            <p>如果您对本隐私政策有任何疑问，请通过<a href="/contact">联系我们</a>页面与我们联系。</p>
+                            
+                            <h2>政策更新</h2>
+                            <p>我们可能会不时更新本隐私政策。更新后的政策将在本页面发布，并更新"最后更新"日期。</p>
+                            <p><em>最后更新：2025年1月</em></p>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading privacy content:', error);
+                    document.getElementById('privacy-content').innerHTML = '<p>加载隐私政策内容时出错，请稍后重试。</p>';
+                });
+        });
+    </script>
+</body>
+</html>
+
