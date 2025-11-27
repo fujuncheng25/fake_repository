@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setupCatSearch();
     setupAdoptionModal();
     setupMobileCommandCenter();
+    setupMobileCruiseFAB();
 });
 
 let recognitionStream = null;
@@ -34,6 +35,10 @@ let mobileReportEl = null;
 let mobileLogEl = null;
 let mobileAutoActive = false;
 let mobileAutoTimer = null;
+let mobilePanelRetreated = false;
+const MOBILE_PANEL_STORAGE_KEY = 'mobilePanelRetreated';
+const DESKTOP_MODE_CLASS = 'desktop-ui-forced';
+let mobilePanelGestureCleanup = null;
 let allCats = [];
 let filteredCats = [];
 let currentUser = null;
@@ -612,6 +617,17 @@ function setupMobileCommandCenter() {
     if (!shouldActivateMobileUI()) {
         return;
     }
+    if (document.body.classList.contains(DESKTOP_MODE_CLASS)) {
+        return;
+    }
+    if (mobilePanelRetreated) {
+        return;
+    }
+    if (isMobilePanelRetreatedInStorage()) {
+        mobilePanelRetreated = true;
+        updateMobileCruiseFABVisibility();
+        return;
+    }
     if (document.getElementById('mobileCommandCenter')) {
         return;
     }
@@ -632,11 +648,8 @@ function setupMobileCommandCenter() {
 
     autoBtn.addEventListener('click', () => toggleMobileAuto(autoBtn));
     snapBtn.addEventListener('click', () => captureMobileSnapshot());
-    retreatBtn.addEventListener('click', () => {
-        if (mobileCommandPanel) {
-            mobileCommandPanel.classList.toggle('collapsed');
-        }
-    });
+    retreatBtn.addEventListener('click', retreatMobilePanelToDesktop);
+    setupMobilePanelGestures();
 
     window.addEventListener('beforeunload', stopMobileCamera);
     document.addEventListener('visibilitychange', () => {
@@ -653,6 +666,200 @@ function shouldActivateMobileUI() {
     return userAgentMobile || (touchCapable && narrowViewport);
 }
 
+function retreatMobilePanelToDesktop() {
+    if (mobilePanelRetreated) {
+        return;
+    }
+    mobilePanelRetreated = true;
+    persistMobilePanelRetreatFlag();
+    activateDesktopView();
+    if (mobileCommandPanel) {
+        mobileCommandPanel.classList.remove('is-dragging');
+        mobileCommandPanel.style.transition = 'transform 0.25s ease';
+        mobileCommandPanel.style.transform = 'translateY(120%)';
+        mobileCommandPanel.addEventListener('transitionend', teardownMobileCommandCenter, { once: true });
+        setTimeout(teardownMobileCommandCenter, 300);
+    } else {
+        teardownMobileCommandCenter();
+    }
+}
+
+function teardownMobileCommandCenter() {
+    if (mobilePanelGestureCleanup) {
+        mobilePanelGestureCleanup();
+        mobilePanelGestureCleanup = null;
+    }
+    stopMobileCamera();
+    document.body.classList.remove('mobile-ui-active');
+    const center = document.getElementById('mobileCommandCenter');
+    if (center && center.parentNode) {
+        center.parentNode.removeChild(center);
+    }
+    mobileCommandPanel = null;
+    mobileCommandVideo = null;
+    mobileCommandCanvas = null;
+    mobileStatusEl = null;
+    mobileReportEl = null;
+    mobileLogEl = null;
+    mobileAutoActive = false;
+    clearInterval(mobileAutoTimer);
+    mobileAutoTimer = null;
+    if (mobileCommandPanel) {
+        mobileCommandPanel.style.transform = '';
+        mobileCommandPanel.style.transition = '';
+    }
+    mobileCommandPanel = null;
+}
+
+function setupMobilePanelGestures() {
+    if (!mobileCommandPanel) {
+        return;
+    }
+    if (mobilePanelGestureCleanup) {
+        mobilePanelGestureCleanup();
+    }
+
+    const panel = mobileCommandPanel;
+    let startY = 0;
+    let currentOffset = 0;
+    let dragging = false;
+
+    const resetTransform = () => {
+        panel.classList.remove('is-dragging');
+        panel.style.transition = '';
+        panel.style.transform = '';
+        currentOffset = 0;
+        dragging = false;
+    };
+
+    const handleStart = event => {
+        if (event.touches && event.touches.length > 1) {
+            return;
+        }
+        startY = (event.touches ? event.touches[0] : event).clientY;
+        currentOffset = 0;
+        dragging = false;
+        panel.classList.remove('is-dragging');
+        panel.style.transition = '';
+    };
+
+    const handleMove = event => {
+        if (event.touches && event.touches.length > 1) {
+            return;
+        }
+        const y = (event.touches ? event.touches[0] : event).clientY;
+        const delta = y - startY;
+        const pullingDown = delta > 0;
+        if (!pullingDown || panel.scrollTop > 0) {
+            if (dragging) {
+                resetTransform();
+            }
+            return;
+        }
+        if (!dragging && Math.abs(delta) < 8) {
+            return;
+        }
+        if (!dragging) {
+            dragging = true;
+            panel.classList.add('is-dragging');
+        }
+        currentOffset = Math.min(delta, 200);
+        panel.style.transform = `translateY(${currentOffset}px)`;
+        if (event.cancelable) {
+            event.preventDefault();
+        }
+    };
+
+    const commitPosition = () => {
+        panel.classList.remove('is-dragging');
+        if (currentOffset > 120) {
+            retreatMobilePanelToDesktop();
+        } else if (currentOffset > 0) {
+            panel.style.transition = 'transform 0.2s ease';
+            panel.style.transform = 'translateY(0)';
+            panel.addEventListener('transitionend', () => {
+                panel.style.transition = '';
+                panel.style.transform = '';
+            }, { once: true });
+        } else {
+            panel.style.transform = '';
+        }
+        dragging = false;
+        currentOffset = 0;
+    };
+
+    const handleEnd = () => {
+        if (!dragging) {
+            return;
+        }
+        commitPosition();
+    };
+
+    panel.addEventListener('touchstart', handleStart, { passive: true });
+    panel.addEventListener('touchmove', handleMove, { passive: false });
+    panel.addEventListener('touchend', handleEnd);
+    panel.addEventListener('touchcancel', handleEnd);
+
+    mobilePanelGestureCleanup = () => {
+        panel.removeEventListener('touchstart', handleStart);
+        panel.removeEventListener('touchmove', handleMove);
+        panel.removeEventListener('touchend', handleEnd);
+        panel.removeEventListener('touchcancel', handleEnd);
+        resetTransform();
+    };
+}
+
+function activateDesktopView() {
+    document.body.classList.add(DESKTOP_MODE_CLASS);
+    document.body.classList.remove('mobile-ui-active');
+    const center = document.getElementById('mobileCommandCenter');
+    if (center) {
+        center.style.opacity = '0';
+        center.style.pointerEvents = 'none';
+    }
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    updateMobileCruiseFABVisibility();
+    setTimeout(() => {
+        if (document.body.classList.contains(DESKTOP_MODE_CLASS)) {
+            window.location.reload();
+        }
+    }, 400);
+}
+
+function getSafeSessionStorage() {
+    try {
+        return window.sessionStorage;
+    } catch (error) {
+        console.debug('Session storage unavailable:', error);
+        return null;
+    }
+}
+
+function isMobilePanelRetreatedInStorage() {
+    const storage = getSafeSessionStorage();
+    if (!storage) {
+        return false;
+    }
+    try {
+        return storage.getItem(MOBILE_PANEL_STORAGE_KEY) === 'true';
+    } catch (error) {
+        console.debug('Session storage read failed:', error);
+        return false;
+    }
+}
+
+function persistMobilePanelRetreatFlag() {
+    const storage = getSafeSessionStorage();
+    if (!storage) {
+        return;
+    }
+    try {
+        storage.setItem(MOBILE_PANEL_STORAGE_KEY, 'true');
+    } catch (error) {
+        console.debug('Session storage write failed:', error);
+    }
+}
+
 function injectMobileCommandMarkup() {
     if (document.getElementById('mobileCommandCenter')) {
         return;
@@ -666,7 +873,7 @@ function injectMobileCommandMarkup() {
                         <span class="mobile-chip">CATalist</span>
                         <h3>巡航识别面板</h3>
                     </div>
-                    <button id="mobileRetreatBtn" class="mobile-retreat-btn" aria-label="收起巡航面板">↘</button>
+                    <button id="mobileRetreatBtn" class="mobile-retreat-btn" aria-label="退出巡航面板">⇤</button>
                 </div>
                 <div class="mobile-body">
                     <div class="mobile-viewfinder">
@@ -1063,4 +1270,59 @@ function setRecognitionStatus(message, type = 'info', targetEl = recognitionStat
     if (!targetEl) return;
     targetEl.textContent = message || '';
     targetEl.className = `recognition-status ${type}`;
+}
+
+function setupMobileCruiseFAB() {
+    if (!shouldActivateMobileUI()) {
+        return;
+    }
+    let fab = document.getElementById('mobileCruiseFAB');
+    if (!fab) {
+        fab = document.createElement('button');
+        fab.id = 'mobileCruiseFAB';
+        fab.className = 'mobile-cruise-fab';
+        fab.setAttribute('aria-label', '打开巡航识别面板');
+        fab.innerHTML = '🚢';
+        fab.addEventListener('click', reactivateMobileCruisePanel);
+        document.body.appendChild(fab);
+    }
+    updateMobileCruiseFABVisibility();
+}
+
+function updateMobileCruiseFABVisibility() {
+    const fab = document.getElementById('mobileCruiseFAB');
+    if (!fab) {
+        return;
+    }
+    if (!shouldActivateMobileUI()) {
+        fab.style.display = 'none';
+        return;
+    }
+    const shouldShow = document.body.classList.contains(DESKTOP_MODE_CLASS) || 
+                       isMobilePanelRetreatedInStorage() || 
+                       mobilePanelRetreated;
+    if (shouldShow) {
+        fab.style.display = 'flex';
+    } else {
+        fab.style.display = 'none';
+    }
+}
+
+function reactivateMobileCruisePanel() {
+    mobilePanelRetreated = false;
+    const storage = getSafeSessionStorage();
+    if (storage) {
+        try {
+            storage.removeItem(MOBILE_PANEL_STORAGE_KEY);
+        } catch (error) {
+            console.debug('Session storage remove failed:', error);
+        }
+    }
+    document.body.classList.remove(DESKTOP_MODE_CLASS);
+    const center = document.getElementById('mobileCommandCenter');
+    if (center && center.parentNode) {
+        center.parentNode.removeChild(center);
+    }
+    updateMobileCruiseFABVisibility();
+    setupMobileCommandCenter();
 }
