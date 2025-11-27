@@ -97,6 +97,15 @@ body.mobile-ui-active {
     overflow: hidden;
 }
 
+body.desktop-ui-forced {
+    overflow: auto;
+    background: #fff;
+}
+
+body.desktop-ui-forced .mobile-command-center {
+    display: none !important;
+}
+
 .mobile-command-center {
     position: fixed;
     inset: 0;
@@ -106,6 +115,8 @@ body.mobile-ui-active {
                 linear-gradient(140deg, #050913 0%, #010308 100%);
     display: none;
     z-index: 1200;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 body.mobile-ui-active .mobile-command-center {
@@ -125,6 +136,16 @@ body.mobile-ui-active .mobile-command-center {
     display: flex;
     flex-direction: column;
     gap: 18px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    transition: transform 0.25s ease;
+}
+
+.mobile-panel.is-dragging {
+    transition: none;
+    box-shadow: 0 45px 110px rgba(0,0,0,0.65);
 }
 
 .mobile-panel.collapsed .mobile-body {
@@ -298,6 +319,47 @@ body.mobile-ui-active .mobile-command-center {
 
     .mobile-controls {
         grid-template-columns: 1fr;
+    }
+}
+
+.mobile-cruise-fab {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4CAF50 0%, #7dffb5 100%);
+    border: none;
+    box-shadow: 0 8px 24px rgba(76, 175, 80, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+    color: #022312;
+    font-size: 28px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    touch-action: manipulation;
+}
+
+.mobile-cruise-fab:active {
+    transform: scale(0.95);
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3), 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.mobile-cruise-fab:hover {
+    transform: scale(1.05);
+    box-shadow: 0 12px 32px rgba(76, 175, 80, 0.5), 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+body.desktop-ui-forced .mobile-cruise-fab {
+    display: flex;
+}
+
+@media (min-width: 769px) {
+    .mobile-cruise-fab {
+        display: none !important;
     }
 }
 
