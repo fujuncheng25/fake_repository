@@ -227,6 +227,26 @@ class DatabaseManager:
         '''
         )
 
+        cursor.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS cat_location_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cat_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                visit_status TEXT,
+                visit_notes TEXT,
+                recognition_event_id INTEGER,
+                image_path TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (cat_id) REFERENCES cats(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (recognition_event_id) REFERENCES cat_recognition_events(id)
+            )
+        '''
+        )
+
         self._ensure_column(cursor, 'users', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
 
         self._initialize_content_defaults(cursor)
@@ -1329,7 +1349,7 @@ class DatabaseManager:
         hash_distance: Optional[int],
         metadata: Dict,
         image_path: Optional[str],
-    ) -> None:
+    ) -> int:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute(
@@ -1353,8 +1373,146 @@ class DatabaseManager:
                 image_path,
             ),
         )
+        event_id = cursor.lastrowid
         conn.commit()
         conn.close()
+        return event_id
+
+    def add_location_history(
+        self,
+        cat_id: int,
+        user_id: int,
+        latitude: float,
+        longitude: float,
+        visit_status: Optional[str] = None,
+        visit_notes: Optional[str] = None,
+        recognition_event_id: Optional[int] = None,
+        image_path: Optional[str] = None,
+    ) -> int:
+        """Add a location history record for a cat"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            INSERT INTO cat_location_history (
+                cat_id,
+                user_id,
+                latitude,
+                longitude,
+                visit_status,
+                visit_notes,
+                recognition_event_id,
+                image_path
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+            (
+                cat_id,
+                user_id,
+                latitude,
+                longitude,
+                visit_status,
+                visit_notes,
+                recognition_event_id,
+                image_path,
+            ),
+        )
+        location_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return location_id
+
+    def get_location_history(
+        self,
+        start_year: Optional[int] = None,
+        end_year: Optional[int] = None,
+        cat_id: Optional[int] = None,
+    ) -> List[Dict]:
+        """Get location history records (admin only)"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        query = '''
+            SELECT
+                clh.id,
+                clh.cat_id,
+                c.name AS cat_name,
+                clh.user_id,
+                u.name AS user_name,
+                clh.latitude,
+                clh.longitude,
+                clh.visit_status,
+                clh.visit_notes,
+                clh.recognition_event_id,
+                clh.image_path,
+                clh.created_at
+            FROM cat_location_history clh
+            JOIN cats c ON c.id = clh.cat_id
+            JOIN users u ON u.id = clh.user_id
+            WHERE 1=1
+        '''
+        params = []
+        
+        if cat_id is not None:
+            query += ' AND clh.cat_id = ?'
+            params.append(cat_id)
+        
+        if start_year is not None:
+            query += ' AND strftime("%Y", clh.created_at) >= ?'
+            params.append(str(start_year))
+        
+        if end_year is not None:
+            query += ' AND strftime("%Y", clh.created_at) <= ?'
+            params.append(str(end_year))
+        
+        query += ' ORDER BY clh.created_at DESC'
+        
+        cursor.execute(query, params)
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
+
+    def get_location_by_id(self, location_id: int) -> Optional[Dict]:
+        """Get a single location history record by ID"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT
+                clh.id,
+                clh.cat_id,
+                c.name AS cat_name,
+                c.age,
+                c.gender,
+                c.description,
+                c.sterilized,
+                c.microchipped,
+                c.special_notes,
+                c.unique_markings,
+                c.identification_code,
+                c.image_path AS cat_image_path,
+                clh.user_id,
+                u.name AS user_name,
+                u.email AS user_email,
+                clh.latitude,
+                clh.longitude,
+                clh.visit_status,
+                clh.visit_notes,
+                clh.recognition_event_id,
+                clh.image_path,
+                clh.created_at
+            FROM cat_location_history clh
+            JOIN cats c ON c.id = clh.cat_id
+            JOIN users u ON u.id = clh.user_id
+            WHERE clh.id = ?
+        ''',
+            (location_id,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
 
 
 # Initialize database
@@ -1757,6 +1915,19 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": "Invalid cat or reference image ID"}).encode())
         elif self.path == '/api/cats/recognize':
             self.handle_recognize_cat()
+        elif self.path == '/api/cats/location':
+            self.handle_add_location()
+        elif self.path == '/api/admin/location-history':
+            self.handle_get_location_history()
+        elif self.path.startswith('/api/admin/location-history/') and self.path.count('/') == 4:
+            path_parts = [part for part in self.path.split('/') if part]
+            try:
+                location_id = int(path_parts[3])
+                self.handle_get_location_by_id(location_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid location ID"}).encode())
         elif self.path == '/api/admin/cat-recognition/settings':
             self.handle_update_recognition_settings()
         elif self.path == '/api/logout':
@@ -1972,6 +2143,17 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.handle_get_admin_login_tokens()
             elif self.path == '/api/messages/recipients':
                 self.handle_get_message_recipients()
+            elif self.path == '/api/admin/location-history':
+                self.handle_get_location_history()
+            elif self.path.startswith('/api/admin/location-history/') and self.path.count('/') == 4:
+                path_parts = [part for part in self.path.split('/') if part]
+                try:
+                    location_id = int(path_parts[3])
+                    self.handle_get_location_by_id(location_id)
+                except (ValueError, IndexError):
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Invalid location ID"}).encode())
             elif self.path.startswith('/api/admin/login'):
                 # Handle admin login via token
                 query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -2034,6 +2216,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.path = '/profile.html'
             elif path == '/admin-cat-editor':
                 self.path = '/admin-cat-editor.html'
+            elif path == '/admin-location-map':
+                self.path = '/admin-location-map.html'
             
             # 尝试提供静态文件
             try:
@@ -3040,7 +3224,7 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             query_image_path = save_uploaded_file('uploads/cat_queries', file_item.filename, image_bytes)
 
         top_match = next((match for match in raw_matches if match.matched), None)
-        db.record_recognition_event(
+        recognition_event_id = db.record_recognition_event(
             cat_id=top_match.cat_id if top_match else None,
             matched=bool(top_match),
             match_score=float(top_match.similarity) if top_match else 0.0,
@@ -3060,6 +3244,7 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             "settings": settings,
             "query_image_path": query_image_path,
             "hash_hex": hash_hex,
+            "recognition_event_id": recognition_event_id,
         }
 
         self.send_response(200)
@@ -4326,6 +4511,172 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     "error": "Failed to send email. Please try again later.",
                     "email_sent": False
                 }).encode())
+
+    def handle_add_location(self):
+        """Handle adding a location record for a cat"""
+        user = self.get_current_user()
+        if not user:
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Authentication required"}).encode())
+            return
+
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+        except (TypeError, ValueError):
+            content_length = 0
+        payload = self.rfile.read(content_length) if content_length else b'{}'
+        try:
+            data = json.loads(payload.decode('utf-8'))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        cat_id = data.get('cat_id')
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+        visit_status = data.get('visit_status')
+        visit_notes = data.get('visit_notes')
+        recognition_event_id = data.get('recognition_event_id')
+        image_path = data.get('image_path')
+
+        if not cat_id or latitude is None or longitude is None:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "cat_id, latitude, and longitude are required"}).encode())
+            return
+
+        try:
+            cat_id = int(cat_id)
+            latitude = float(latitude)
+            longitude = float(longitude)
+            if recognition_event_id is not None:
+                recognition_event_id = int(recognition_event_id)
+        except (ValueError, TypeError):
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid data types"}).encode())
+            return
+
+        # Validate year range (1999-3000)
+        import datetime
+        current_year = datetime.datetime.now().year
+        if not (1999 <= current_year <= 3000):
+            # This is just a sanity check, actual validation happens at query time
+            pass
+
+        try:
+            location_id = db.add_location_history(
+                cat_id=cat_id,
+                user_id=user['id'],
+                latitude=latitude,
+                longitude=longitude,
+                visit_status=visit_status,
+                visit_notes=visit_notes,
+                recognition_event_id=recognition_event_id,
+                image_path=image_path,
+            )
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "message": "Location recorded successfully",
+                "location_id": location_id
+            }).encode())
+        except Exception as exc:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": f"Failed to record location: {str(exc)}"}).encode())
+
+    def handle_get_location_history(self):
+        """Get location history records (admin only)"""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            start_year = query_params.get('start_year', [None])[0]
+            end_year = query_params.get('end_year', [None])[0]
+            cat_id = query_params.get('cat_id', [None])[0]
+
+            start_year = int(start_year) if start_year else None
+            end_year = int(end_year) if end_year else None
+            cat_id = int(cat_id) if cat_id else None
+
+            # Validate year range (1999-3000)
+            if start_year is not None and not (1999 <= start_year <= 3000):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "start_year must be between 1999 and 3000"}).encode())
+                return
+
+            if end_year is not None and not (1999 <= end_year <= 3000):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "end_year must be between 1999 and 3000"}).encode())
+                return
+
+            locations = db.get_location_history(
+                start_year=start_year,
+                end_year=end_year,
+                cat_id=cat_id,
+            )
+
+            # Convert boolean values
+            for loc in locations:
+                if 'visit_status' in loc and loc['visit_status'] is None:
+                    loc['visit_status'] = None
+
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(locations).encode())
+        except ValueError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid query parameters"}).encode())
+        except Exception as exc:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(exc)}).encode())
+
+    def handle_get_location_by_id(self, location_id: int):
+        """Get a single location record by ID (admin only)"""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            location = db.get_location_by_id(location_id)
+            if not location:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Location not found"}).encode())
+                return
+
+            # Convert boolean values
+            if 'sterilized' in location:
+                location['sterilized'] = bool(location.get('sterilized'))
+            if 'microchipped' in location:
+                location['microchipped'] = bool(location.get('microchipped'))
+
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(location).encode())
+        except Exception as exc:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(exc)}).encode())
         else:
             # User doesn't exist, but return same success message for security
             self.send_response(200)
