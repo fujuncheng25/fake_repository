@@ -139,6 +139,7 @@ class DatabaseManager:
 
         self._ensure_column(cursor, 'users', 'is_verified', 'BOOLEAN DEFAULT 0')
         self._ensure_column(cursor, 'users', 'verification_token', 'TEXT')
+        self._ensure_column(cursor, 'users', 'is_super_admin', 'BOOLEAN DEFAULT 0')
 
         cursor.execute(
             '''
@@ -411,7 +412,7 @@ class DatabaseManager:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT id, name, email, is_admin, is_verified, created_at FROM users ORDER BY created_at DESC")
+        cursor.execute("SELECT id, name, email, is_admin, is_super_admin, is_verified, created_at FROM users ORDER BY created_at DESC")
         users = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return users
@@ -706,6 +707,34 @@ class DatabaseManager:
             SET is_verified = ?
             WHERE id = ?
         ''', (1 if is_verified else 0, user_id))
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
+    
+    def update_user_admin_status(self, user_id, is_admin):
+        """Manually update user admin status (admin only)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE users 
+            SET is_admin = ?
+            WHERE id = ?
+        ''', (1 if is_admin else 0, user_id))
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
+    
+    def update_user_super_admin_status(self, user_id, is_super_admin):
+        """Update user super admin status"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE users 
+            SET is_super_admin = ?
+            WHERE id = ?
+        ''', (1 if is_super_admin else 0, user_id))
         success = cursor.rowcount > 0
         conn.commit()
         conn.close()
@@ -2025,8 +2054,16 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(400)
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": "Invalid user ID"}).encode())
-        elif self.path == '/api/admin/generate-login-link':
-            self.handle_generate_admin_login_link()
+        elif '/api/users/' in self.path and self.path.endswith('/admin'):
+            # Handle set user as admin request
+            path_parts = self.path.split('/')
+            try:
+                user_id = int(path_parts[3])  # /api/users/{id}/admin
+                self.handle_set_user_admin(user_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid user ID"}).encode())
         elif self.path == '/api/user/change-password':
             self.handle_change_password()
         elif self.path == '/api/user/profile':
@@ -2139,8 +2176,6 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.handle_get_reference_images()
             elif self.path == '/api/admin/cat-recognition/events':
                 self.handle_get_recognition_events()
-            elif self.path == '/api/admin/login-tokens':
-                self.handle_get_admin_login_tokens()
             elif self.path == '/api/messages/recipients':
                 self.handle_get_message_recipients()
             elif self.path == '/api/admin/location-history' or self.path.startswith('/api/admin/location-history?'):
@@ -2273,10 +2308,10 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             # Create auth token
             token = hashlib.sha256(f"{email}{user['password_hash']}".encode()).hexdigest()
             
-            # Set cookies
+            # Set cookies with 24-day expiration
             self.send_response(200)
-            self.send_header('Set-Cookie', f"user_email={email}; Path=/")
-            self.send_header('Set-Cookie', f"user_token={token}; Path=/")
+            self.send_header('Set-Cookie', f"user_email={email}; Path=/; Max-Age=2073600")
+            self.send_header('Set-Cookie', f"user_token={token}; Path=/; Max-Age=2073600")
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             
@@ -2284,7 +2319,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "id": user['id'],
                 "name": user['name'],
                 "email": user['email'],
-                "is_admin": bool(user['is_admin']),
+                "is_admin": bool(user.get('is_admin', False)),
+                "is_super_admin": bool(user.get('is_super_admin', False)),
                 "is_verified": bool(user.get('is_verified', False))
             }
             self.wfile.write(json.dumps(response).encode())
@@ -3484,7 +3520,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "id": user['id'],
                 "name": user['name'],
                 "email": user['email'],
-                "is_admin": bool(user['is_admin']),
+                "is_admin": bool(user.get('is_admin', False)),
+                "is_super_admin": bool(user.get('is_super_admin', False)),
                 "is_verified": bool(user.get('is_verified', False))
             }
             self.wfile.write(json.dumps(response).encode())
@@ -4255,90 +4292,74 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
     
-    def handle_generate_admin_login_link(self):
-        """Generate a single-use admin login link (admin only)"""
+    def handle_set_user_admin(self, user_id):
+        """Set user as admin (super admin only)"""
         user = self.get_current_user()
-        if not user or not user['is_admin']:
+        if not user or not (user.get('is_super_admin') or user.get('is_super_admin') == 1):
             self.send_response(403)
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            self.wfile.write(json.dumps({"error": "Super admin access required"}).encode())
             return
         
+        # Consume request body if present
         content_length = int(self.headers.get('Content-Length', 0) or 0)
-        expires_in_hours = 24  # Default 24 hours
+        if content_length:
+            self.rfile.read(content_length)
         
-        if content_length > 0:
-            post_data = self.rfile.read(content_length)
-            try:
-                data = json.loads(post_data.decode('utf-8'))
-                expires_in_hours = data.get('expires_in_hours', 24)
-            except:
-                pass
+        # Check if target user exists
+        target_user = db.get_user_by_id(user_id)
+        if not target_user:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "User not found"}).encode())
+            return
         
-        try:
-            token = db.create_admin_login_token(user['id'], expires_in_hours)
-            
-            # Get base URL from settings or use default
-            base_url = db.get_setting('base_url') or f"http://localhost:{PORT}"
-            login_url = f"{base_url}/api/admin/login?token={token}"
-            
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
+        # Prevent setting self as admin (redundant but safe)
+        if target_user.get('is_admin'):
+            self.send_response(400)
             self.end_headers()
-            self.wfile.write(json.dumps({
-                "token": token,
-                "login_url": login_url,
-                "expires_in_hours": expires_in_hours,
-                "message": "Admin login link generated successfully"
-            }).encode())
-        except Exception as e:
-            self.send_response(500)
-            self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
-    
-    def handle_get_admin_login_tokens(self):
-        """Get list of admin login tokens (admin only)"""
-        user = self.get_current_user()
-        if not user or not user['is_admin']:
-            self.send_response(403)
-            self.end_headers()
-            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            self.wfile.write(json.dumps({"error": "User is already an administrator"}).encode())
             return
         
         try:
-            tokens = db.get_admin_login_tokens(50)
-            # Check if tokens are expired or still valid
-            from datetime import datetime
-            now = datetime.now()
-            for token in tokens:
-                token['used'] = bool(token['used'])
-                expires_at = datetime.strptime(token['expires_at'], '%Y-%m-%d %H:%M:%S') if isinstance(token['expires_at'], str) else token['expires_at']
-                token['expired'] = expires_at < now
-            
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps(tokens).encode())
+            success = db.update_user_admin_status(user_id, True)
+            if success:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": "User has been set as administrator successfully"}).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "User not found or could not be updated"}).encode())
         except Exception as e:
             self.send_response(500)
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
     
     def handle_admin_login_with_token(self, token):
-        """Authenticate admin using a single-use token"""
+        """Authenticate admin using a single-use token and set as super admin"""
         try:
             user_id = db.validate_and_use_admin_token(token)
             
             if user_id:
                 user = db.get_user_by_id(user_id)
-                if user and user.get('is_admin'):
+                if user:
+                    # Set user as super admin when logging in via token
+                    db.update_user_super_admin_status(user_id, True)
+                    # Also ensure they are admin
+                    if not user.get('is_admin'):
+                        db.update_user_admin_status(user_id, True)
+                    
+                    # Refresh user data
+                    user = db.get_user_by_id(user_id)
+                    
                     # Create auth token
                     auth_token = hashlib.sha256(f"{user['email']}{user['password_hash']}".encode()).hexdigest()
                     
-                    # Set cookies
+                    # Set cookies with 24-day expiration
                     self.send_response(200)
-                    self.send_header('Set-Cookie', f"user_email={user['email']}; Path=/")
-                    self.send_header('Set-Cookie', f"user_token={auth_token}; Path=/")
+                    self.send_header('Set-Cookie', f"user_email={user['email']}; Path=/; Max-Age=2073600")
+                    self.send_header('Set-Cookie', f"user_token={auth_token}; Path=/; Max-Age=2073600")
                     self.send_header('Content-type', 'application/json')
                     self.end_headers()
                     
@@ -4347,8 +4368,9 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                         "name": user['name'],
                         "email": user['email'],
                         "is_admin": True,
+                        "is_super_admin": True,
                         "is_verified": bool(user.get('is_verified', False)),
-                        "message": "Admin login successful"
+                        "message": "Super admin login successful"
                     }
                     self.wfile.write(json.dumps(response).encode())
                 else:
@@ -4805,54 +4827,69 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 # 设置当前工作目录
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-# Generate admin login link on startup
+# Generate super admin login link on startup
 def generate_startup_admin_login_link():
-    """Generate and display admin login link on server startup"""
+    """Generate and display super admin login link on server startup"""
     try:
-        # Find first admin user
-        admin_user = None
+        # Find first super admin user
+        super_admin_user = None
         users = db.get_all_users()
         for user in users:
-            # Check if user is admin (handle both boolean and integer)
-            is_admin = user.get('is_admin')
-            if is_admin or is_admin == 1:
+            # Check if user is super admin (handle both boolean and integer)
+            is_super_admin = user.get('is_super_admin')
+            if is_super_admin or is_super_admin == 1:
                 # Get full user data by ID
-                admin_user = db.get_user_by_id(user['id'])
+                super_admin_user = db.get_user_by_id(user['id'])
                 break
         
-        # If not found in users list, try by default admin email
-        if not admin_user:
-            admin_user = db.get_user_by_email('admin@cats.com')
+        # If not found, try by default admin email
+        if not super_admin_user:
+            super_admin_user = db.get_user_by_email('admin@cats.com')
+            # If found but not super admin, make them super admin
+            if super_admin_user and not (super_admin_user.get('is_super_admin') or super_admin_user.get('is_super_admin') == 1):
+                db.update_user_super_admin_status(super_admin_user['id'], True)
+                super_admin_user = db.get_user_by_id(super_admin_user['id'])
         
-        if not admin_user or not (admin_user.get('is_admin') or admin_user.get('is_admin') == 1):
-            print("\n⚠️  警告: 未找到管理员账户")
-            print("   服务器将无法使用管理员功能")
+        # If still not found, find any admin and make them super admin
+        if not super_admin_user:
+            users = db.get_all_users()
+            for user in users:
+                is_admin = user.get('is_admin')
+                if is_admin or is_admin == 1:
+                    super_admin_user = db.get_user_by_id(user['id'])
+                    db.update_user_super_admin_status(super_admin_user['id'], True)
+                    super_admin_user = db.get_user_by_id(super_admin_user['id'])
+                    break
+        
+        if not super_admin_user:
+            print("\n⚠️  警告: 未找到超级管理员账户")
+            print("   服务器将无法使用超级管理员功能")
             return
         
         # Generate admin login token (expires in 24 hours)
-        token = db.create_admin_login_token(admin_user['id'], expires_in_hours=24)
+        token = db.create_admin_login_token(super_admin_user['id'], expires_in_hours=24)
         
         # Get base URL from settings or use default
         base_url = db.get_setting('base_url') or f"http://{HOST}:{PORT}"
         login_url = f"{base_url}/api/admin/login?token={token}"
         
-        # Display admin login link in console
+        # Display super admin login link in console
         print("\n" + "="*80)
-        print("🔐 管理员登录链接 (Admin Login Link)")
+        print("🔐 超级管理员登录链接 (Super Admin Login Link)")
         print("="*80)
-        print(f"\n👤 管理员账户 (Admin User): {admin_user['name']} ({admin_user['email']})")
+        print(f"\n👤 超级管理员账户 (Super Admin User): {super_admin_user['name']} ({super_admin_user['email']})")
         print(f"⏰ 有效期 (Expires): 24小时 (24 hours)")
         print(f"\n📋 登录链接 (Login Link):")
         print("-"*80)
         print(login_url)
         print("-"*80)
-        print("\n💡 提示: 此链接只能使用一次，使用后立即失效")
-        print("   Note: This link is single-use and will expire after first use")
+        print("\n💡 提示: 此链接只能使用一次，使用后立即失效。通过此链接登录的用户将被设置为超级管理员")
+        print("   Note: This link is single-use and will expire after first use. Users logging in via this link will be set as super admin")
         print("="*80 + "\n")
         
     except Exception as e:
-        print(f"\n⚠️  警告: 生成管理员登录链接时出错: {str(e)}")
-        print("   Warning: Error generating admin login link:", str(e))
+        print(f"\n⚠️  警告: 生成超级管理员登录链接时出错: {str(e)}")
+        print("   Warning: Error generating super admin login link:", str(e))
 
 # Generate admin login link on startup
 generate_startup_admin_login_link()
