@@ -97,6 +97,16 @@
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
         
+        /* Fixed-size marker icon - size doesn't change with zoom */
+        .fixed-marker-icon {
+            background: transparent !important;
+            border: none !important;
+        }
+        
+        .fixed-marker-icon div {
+            transition: none !important;
+        }
+        
         .location-info-modal {
             position: fixed;
             top: 0;
@@ -254,12 +264,24 @@
         let markers = [];
         let locationData = [];
 
-        // Initialize map
+        // Create fixed-size icon for markers (size doesn't change with zoom)
+        function createFixedSizeIcon() {
+            return L.divIcon({
+                className: 'fixed-marker-icon',
+                html: '<div style="width: 12px; height: 12px; background-color: #e74c3c; border: 2px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3); cursor: pointer;"></div>',
+                iconSize: [12, 12],
+                iconAnchor: [6, 6],
+                popupAnchor: [0, -6]
+            });
+        }
+
+        // Initialize map - start with world view
         function initMap() {
-            map = L.map('map').setView([39.9042, 116.4074], 13); // Default to Beijing
+            map = L.map('map').setView([20, 0], 2); // World view, zoom level 2
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '© OpenStreetMap contributors',
-                maxZoom: 19
+                maxZoom: 19,
+                minZoom: 1
             }).addTo(map);
         }
 
@@ -269,31 +291,93 @@
             const endYear = document.getElementById('endYear').value;
             const catId = document.getElementById('catId').value;
 
-            let url = '/api/admin/location-history?';
+            let url = '/api/admin/location-history';
             const params = [];
             if (startYear) params.push(`start_year=${startYear}`);
             if (endYear) params.push(`end_year=${endYear}`);
             if (catId) params.push(`cat_id=${catId}`);
-            url += params.join('&');
+            if (params.length > 0) {
+                url += '?' + params.join('&');
+            }
+
+            // Show loading state
+            const statsSummary = document.getElementById('statsSummary');
+            if (statsSummary) {
+                statsSummary.style.opacity = '0.5';
+            }
 
             fetch(url, { credentials: 'include' })
-                .then(response => {
+                .then(async response => {
                     if (response.status === 403) {
                         alert('需要管理员权限访问此页面');
                         window.location.href = '/';
                         return null;
                     }
-                    return response.json();
+                    
+                    // Check if response has content
+                    const contentType = response.headers.get('content-type');
+                    const text = await response.text();
+                    
+                    if (!text || text.trim() === '') {
+                        throw new Error(`服务器返回空响应 (HTTP ${response.status})`);
+                    }
+                    
+                    if (!response.ok) {
+                        // Try to parse as JSON, but handle empty or invalid JSON
+                        let errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+                        try {
+                            if (contentType && contentType.includes('application/json')) {
+                                const err = JSON.parse(text);
+                                errorMsg = err.error || errorMsg;
+                            } else {
+                                errorMsg = text || errorMsg;
+                            }
+                        } catch (e) {
+                            // If JSON parsing fails, use text or default message
+                            errorMsg = text || errorMsg;
+                        }
+                        throw new Error(errorMsg);
+                    }
+                    
+                    // Parse JSON response
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        throw new Error('服务器返回的数据不是有效的JSON格式: ' + e.message);
+                    }
                 })
                 .then(data => {
                     if (!data) return;
-                    locationData = data;
+                    
+                    // Ensure data is an array
+                    if (!Array.isArray(data)) {
+                        console.error('Invalid data format:', data);
+                        alert('数据格式错误：服务器返回的数据不是数组格式');
+                        locationData = [];
+                    } else {
+                        locationData = data;
+                    }
+                    
                     updateMap();
                     updateStats();
+                    
+                    // Restore opacity
+                    if (statsSummary) {
+                        statsSummary.style.opacity = '1';
+                    }
                 })
                 .catch(error => {
                     console.error('Error loading location data:', error);
-                    alert('加载位置数据失败');
+                    const errorMsg = error.message || '加载位置数据失败';
+                    alert('加载位置数据失败: ' + errorMsg);
+                    locationData = [];
+                    updateMap();
+                    updateStats();
+                    
+                    // Restore opacity
+                    if (statsSummary) {
+                        statsSummary.style.opacity = '1';
+                    }
                 });
         }
 
@@ -303,37 +387,56 @@
             markers.forEach(marker => map.removeLayer(marker));
             markers = [];
 
-            if (locationData.length === 0) {
+            if (!map) {
+                console.error('Map not initialized');
                 return;
             }
 
-            // Create markers
-            const bounds = [];
+            if (locationData.length === 0) {
+                console.log('No location data to display');
+                return;
+            }
+
+            // Create fixed-size icon
+            const fixedIcon = createFixedSizeIcon();
+
+            let validMarkers = 0;
+            // Create markers with fixed-size icons (can overlap)
             locationData.forEach(location => {
-                const lat = location.latitude;
-                const lng = location.longitude;
+                const lat = parseFloat(location.latitude);
+                const lng = parseFloat(location.longitude);
                 
-                const marker = L.marker([lat, lng])
-                    .addTo(map)
-                    .bindPopup(`
-                        <strong>${location.cat_name || '未知猫咪'}</strong><br>
-                        时间: ${new Date(location.created_at).toLocaleString('zh-CN')}<br>
-                        <button onclick="showLocationInfo(${location.id})" style="margin-top: 8px; padding: 4px 8px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">查看详情</button>
-                    `);
+                // Validate coordinates
+                if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+                    console.warn('Invalid coordinates:', location);
+                    return;
+                }
                 
-                marker.locationId = location.id;
-                marker.on('click', () => {
-                    showLocationInfo(location.id);
-                });
-                
-                markers.push(marker);
-                bounds.push([lat, lng]);
+                try {
+                    const marker = L.marker([lat, lng], {
+                        icon: fixedIcon
+                    })
+                        .addTo(map)
+                        .bindPopup(`
+                            <strong>${location.cat_name || '未知猫咪'}</strong><br>
+                            时间: ${new Date(location.created_at).toLocaleString('zh-CN')}<br>
+                            <button onclick="showLocationInfo(${location.id})" style="margin-top: 8px; padding: 4px 8px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">查看详情</button>
+                        `);
+                    
+                    marker.locationId = location.id;
+                    marker.on('click', () => {
+                        showLocationInfo(location.id);
+                    });
+                    
+                    markers.push(marker);
+                    validMarkers++;
+                } catch (error) {
+                    console.error('Error creating marker:', error, location);
+                }
             });
 
-            // Fit map to show all markers
-            if (bounds.length > 0) {
-                map.fitBounds(bounds, { padding: [50, 50] });
-            }
+            console.log(`Added ${validMarkers} markers to map (${locationData.length} total records)`);
+            // Don't auto-fit bounds - let user navigate manually
         }
 
         // Update statistics
@@ -357,7 +460,39 @@
         // Show location info
         function showLocationInfo(locationId) {
             fetch(`/api/admin/location-history/${locationId}`, { credentials: 'include' })
-                .then(response => response.json())
+                .then(async response => {
+                    // Check if response has content
+                    const contentType = response.headers.get('content-type');
+                    const text = await response.text();
+                    
+                    if (!text || text.trim() === '') {
+                        throw new Error(`服务器返回空响应 (HTTP ${response.status})`);
+                    }
+                    
+                    if (!response.ok) {
+                        // Try to parse as JSON, but handle empty or invalid JSON
+                        let errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+                        try {
+                            if (contentType && contentType.includes('application/json')) {
+                                const err = JSON.parse(text);
+                                errorMsg = err.error || errorMsg;
+                            } else {
+                                errorMsg = text || errorMsg;
+                            }
+                        } catch (e) {
+                            // If JSON parsing fails, use text or default message
+                            errorMsg = text || errorMsg;
+                        }
+                        throw new Error(errorMsg);
+                    }
+                    
+                    // Parse JSON response
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        throw new Error('服务器返回的数据不是有效的JSON格式: ' + e.message + '。响应内容: ' + text.substring(0, 200));
+                    }
+                })
                 .then(data => {
                     if (data.error) {
                         alert(data.error);
@@ -451,25 +586,37 @@
 
         // Check admin access
         function checkAdminAccess() {
-            fetch('/api/current_user')
-                .then(response => response.json())
+            fetch('/api/current_user', { credentials: 'include' })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to check user status');
+                    }
+                    return response.json();
+                })
                 .then(user => {
-                    if (!user.is_admin) {
+                    if (!user || !user.is_admin) {
                         alert('需要管理员权限访问此页面');
                         window.location.href = '/';
                     } else {
-                        initMap();
-                        loadLocationData();
+                        // Initialize map first, then load data
+                        ensureMapReady();
+                        // Wait a bit for map to fully initialize
+                        setTimeout(() => {
+                            loadLocationData();
+                        }, 500);
                     }
                 })
                 .catch(error => {
-                    console.error('Error:', error);
+                    console.error('Error checking admin access:', error);
+                    alert('无法验证管理员权限，请重新登录');
                     window.location.href = '/';
                 });
         }
 
         // Initialize on page load
-        window.addEventListener('DOMContentLoaded', checkAdminAccess);
+        window.addEventListener('DOMContentLoaded', () => {
+            checkAdminAccess();
+        });
 
         // Close modal on background click
         document.getElementById('locationInfoModal').addEventListener('click', (e) => {
@@ -477,6 +624,24 @@
                 closeLocationInfo();
             }
         });
+        
+        // Ensure map container is ready before initialization
+        function ensureMapReady() {
+            const mapContainer = document.getElementById('map');
+            if (!mapContainer) {
+                setTimeout(ensureMapReady, 100);
+                return;
+            }
+            if (!map) {
+                try {
+                    initMap();
+                    console.log('Map initialized successfully');
+                } catch (error) {
+                    console.error('Error initializing map:', error);
+                    alert('地图初始化失败: ' + error.message);
+                }
+            }
+        }
     </script>
 </body>
 </html>

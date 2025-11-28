@@ -1437,9 +1437,9 @@ class DatabaseManager:
             SELECT
                 clh.id,
                 clh.cat_id,
-                c.name AS cat_name,
+                COALESCE(c.name, '未知猫咪') AS cat_name,
                 clh.user_id,
-                u.name AS user_name,
+                COALESCE(u.name, '未知用户') AS user_name,
                 clh.latitude,
                 clh.longitude,
                 clh.visit_status,
@@ -1448,8 +1448,8 @@ class DatabaseManager:
                 clh.image_path,
                 clh.created_at
             FROM cat_location_history clh
-            JOIN cats c ON c.id = clh.cat_id
-            JOIN users u ON u.id = clh.user_id
+            LEFT JOIN cats c ON c.id = clh.cat_id
+            LEFT JOIN users u ON u.id = clh.user_id
             WHERE 1=1
         '''
         params = []
@@ -1917,7 +1917,7 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_recognize_cat()
         elif self.path == '/api/cats/location':
             self.handle_add_location()
-        elif self.path == '/api/admin/location-history':
+        elif self.path == '/api/admin/location-history' or self.path.startswith('/api/admin/location-history?'):
             self.handle_get_location_history()
         elif self.path.startswith('/api/admin/location-history/') and self.path.count('/') == 4:
             path_parts = [part for part in self.path.split('/') if part]
@@ -2143,17 +2143,23 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.handle_get_admin_login_tokens()
             elif self.path == '/api/messages/recipients':
                 self.handle_get_message_recipients()
-            elif self.path == '/api/admin/location-history':
+            elif self.path == '/api/admin/location-history' or self.path.startswith('/api/admin/location-history?'):
                 self.handle_get_location_history()
-            elif self.path.startswith('/api/admin/location-history/') and self.path.count('/') == 4:
-                path_parts = [part for part in self.path.split('/') if part]
-                try:
-                    location_id = int(path_parts[3])
-                    self.handle_get_location_by_id(location_id)
-                except (ValueError, IndexError):
-                    self.send_response(400)
+            elif self.path.startswith('/api/admin/location-history/'):
+                # Parse path to get location ID (handle query params)
+                parsed_path = urllib.parse.urlparse(self.path)
+                path_parts = [part for part in parsed_path.path.split('/') if part]
+                if len(path_parts) >= 4 and path_parts[0] == 'api' and path_parts[1] == 'admin' and path_parts[2] == 'location-history':
+                    try:
+                        location_id = int(path_parts[3])
+                        self.handle_get_location_by_id(location_id)
+                    except (ValueError, IndexError):
+                        self.send_response(400)
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"error": "Invalid location ID"}).encode())
+                else:
+                    self.send_response(404)
                     self.end_headers()
-                    self.wfile.write(json.dumps({"error": "Invalid location ID"}).encode())
             elif self.path.startswith('/api/admin/login'):
                 # Handle admin login via token
                 query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -4628,23 +4634,35 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 cat_id=cat_id,
             )
 
-            # Convert boolean values
+            # Ensure locations is a list
+            if not isinstance(locations, list):
+                locations = []
+
+            # Convert boolean values and ensure all fields are properly serialized
             for loc in locations:
                 if 'visit_status' in loc and loc['visit_status'] is None:
                     loc['visit_status'] = None
+                # Ensure numeric fields are properly converted
+                if 'latitude' in loc:
+                    loc['latitude'] = float(loc['latitude']) if loc['latitude'] is not None else None
+                if 'longitude' in loc:
+                    loc['longitude'] = float(loc['longitude']) if loc['longitude'] is not None else None
 
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps(locations).encode())
-        except ValueError:
+            self.wfile.write(json.dumps(locations, ensure_ascii=False).encode())
+        except ValueError as ve:
             self.send_response(400)
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "Invalid query parameters"}).encode())
+            self.wfile.write(json.dumps({"error": f"Invalid query parameters: {str(ve)}"}).encode())
         except Exception as exc:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"Error in handle_get_location_history: {error_trace}")
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(json.dumps({"error": str(exc)}).encode())
+            self.wfile.write(json.dumps({"error": f"Internal server error: {str(exc)}"}).encode())
 
     def handle_get_location_by_id(self, location_id: int):
         """Get a single location record by ID (admin only)"""
@@ -4668,23 +4686,24 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 location['sterilized'] = bool(location.get('sterilized'))
             if 'microchipped' in location:
                 location['microchipped'] = bool(location.get('microchipped'))
+            
+            # Ensure numeric fields are properly converted
+            if 'latitude' in location:
+                location['latitude'] = float(location['latitude']) if location['latitude'] is not None else None
+            if 'longitude' in location:
+                location['longitude'] = float(location['longitude']) if location['longitude'] is not None else None
 
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps(location).encode())
+            self.wfile.write(json.dumps(location, ensure_ascii=False).encode())
         except Exception as exc:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"Error in handle_get_location_by_id: {error_trace}")
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(json.dumps({"error": str(exc)}).encode())
-        else:
-            # User doesn't exist, but return same success message for security
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                "message": "If an account exists with this email, a verification code has been sent.",
-                "email_sent": True
-            }).encode())
+            self.wfile.write(json.dumps({"error": f"Internal server error: {str(exc)}"}, ensure_ascii=False).encode())
     
     def handle_verify_reset_code(self):
         """Verify password reset code"""

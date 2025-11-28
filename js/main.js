@@ -1043,20 +1043,30 @@ function appendMobileLog(message) {
 
 let currentRecognitionResult = null;
 let locationFAB = null;
+let unknownCatCount = 0; // 连续未识别到已知猫的次数
+const UNKNOWN_CAT_THRESHOLD = 3; // 达到此次数后跳转到上传页面
 
 function handleMobileRecognitionResults(result) {
     if (!result) {
         updateMobileReport('识别失败，请稍后再试。', 'error');
         hideLocationFAB();
+        unknownCatCount++;
+        checkUnknownCatThreshold();
         return;
     }
     const matches = Array.isArray(result.matches) ? result.matches : [];
-    if (!matches.length) {
+    if (!matches.length || !matches[0].matched) {
         updateMobileReport('未识别到已登记的猫咪。', 'info');
         appendMobileLog('暂无匹配结果。');
         hideLocationFAB();
+        unknownCatCount++;
+        checkUnknownCatThreshold();
         return;
     }
+    
+    // 识别到已知猫，重置计数器
+    unknownCatCount = 0;
+    
     const topMatch = matches[0];
     currentRecognitionResult = {
         match: topMatch,
@@ -1064,7 +1074,66 @@ function handleMobileRecognitionResults(result) {
         query_image_path: result.query_image_path
     };
     reportMobileRecognition(topMatch);
-    showLocationFAB();
+    
+    // 立即请求位置并显示表单
+    requestLocationAndShowForm();
+}
+
+function checkUnknownCatThreshold() {
+    if (unknownCatCount >= UNKNOWN_CAT_THRESHOLD) {
+        if (confirm(`已连续${UNKNOWN_CAT_THRESHOLD}次未识别到已知猫咪，是否跳转到上传页面填写新猫咪信息？`)) {
+            window.location.href = '/upload.html';
+        } else {
+            unknownCatCount = 0; // 用户取消，重置计数器
+        }
+    }
+}
+
+function requestLocationAndShowForm() {
+    if (!currentRecognitionResult || !currentRecognitionResult.match.matched) {
+        return;
+    }
+    
+    const cat = currentRecognitionResult.match.cat;
+    if (!cat || !cat.id) {
+        alert('无法获取猫咪信息');
+        return;
+    }
+    
+    // 立即请求位置
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            position => {
+                showLocationForm(
+                    cat.id,
+                    position.coords.latitude,
+                    position.coords.longitude,
+                    currentRecognitionResult.recognition_event_id,
+                    currentRecognitionResult.query_image_path
+                );
+            },
+            error => {
+                // 位置获取失败，仍然显示表单让用户手动输入
+                showLocationForm(
+                    cat.id,
+                    null,
+                    null,
+                    currentRecognitionResult.recognition_event_id,
+                    currentRecognitionResult.query_image_path
+                );
+            },
+            { timeout: 10000, enableHighAccuracy: true }
+        );
+    } else {
+        // 不支持地理位置，直接显示表单
+        showLocationForm(
+            cat.id,
+            null,
+            null,
+            currentRecognitionResult.recognition_event_id,
+            currentRecognitionResult.query_image_path
+        );
+    }
 }
 
 function reportMobileRecognition(match) {
@@ -1081,19 +1150,12 @@ function reportMobileRecognition(match) {
 }
 
 function showLocationFAB() {
+    // 保留此函数以兼容可能的其他调用，但主要逻辑已改为自动显示表单
     if (!currentRecognitionResult || !currentRecognitionResult.match.matched) {
         return;
     }
-    
-    if (!locationFAB) {
-        locationFAB = document.createElement('button');
-        locationFAB.className = 'location-fab';
-        locationFAB.innerHTML = '📍 记录位置';
-        locationFAB.setAttribute('aria-label', '记录猫咪位置');
-        locationFAB.addEventListener('click', handleLocationFABClick);
-        document.body.appendChild(locationFAB);
-    }
-    locationFAB.style.display = 'block';
+    // 不再显示悬浮按钮，直接请求位置并显示表单
+    requestLocationAndShowForm();
 }
 
 function hideLocationFAB() {
@@ -1103,60 +1165,29 @@ function hideLocationFAB() {
     currentRecognitionResult = null;
 }
 
-function handleLocationFABClick() {
-    if (!currentRecognitionResult || !currentRecognitionResult.match.matched) {
-        return;
-    }
-    
-    const cat = currentRecognitionResult.match.cat;
-    if (!cat || !cat.id) {
-        alert('无法获取猫咪信息');
-        return;
-    }
-    
-    // Get current location
-    if (navigator.geolocation) {
-        locationFAB.disabled = true;
-        locationFAB.textContent = '获取位置中...';
-        
-        navigator.geolocation.getCurrentPosition(
-            position => {
-                showLocationForm(
-                    cat.id,
-                    position.coords.latitude,
-                    position.coords.longitude,
-                    currentRecognitionResult.recognition_event_id,
-                    currentRecognitionResult.query_image_path
-                );
-                locationFAB.disabled = false;
-                locationFAB.textContent = '📍 记录位置';
-            },
-            error => {
-                alert('无法获取位置，请手动输入位置信息');
-                showLocationForm(
-                    cat.id,
-                    null,
-                    null,
-                    currentRecognitionResult.recognition_event_id,
-                    currentRecognitionResult.query_image_path
-                );
-                locationFAB.disabled = false;
-                locationFAB.textContent = '📍 记录位置';
-            },
-            { timeout: 10000, enableHighAccuracy: true }
-        );
-    } else {
-        showLocationForm(
-            cat.id,
-            null,
-            null,
-            currentRecognitionResult.recognition_event_id,
-            currentRecognitionResult.query_image_path
-        );
-    }
-}
+let currentLocationModal = null;
+let userHasEditedCoordinates = false;
 
-function showLocationForm(catId, latitude, longitude, recognitionEventId, imagePath) {
+function showLocationForm(catId, latitude, longitude, recognitionEventId, imagePath, updateOnlyIfEmpty = false) {
+    // If modal already exists, check if we should update coordinates
+    if (currentLocationModal) {
+        if (updateOnlyIfEmpty && !userHasEditedCoordinates) {
+            const latInput = document.getElementById('locationLat');
+            const lngInput = document.getElementById('locationLng');
+            // Only update if fields are empty
+            if (latInput && (!latInput.value || latInput.value.trim() === '') && latitude) {
+                latInput.value = latitude;
+            }
+            if (lngInput && (!lngInput.value || lngInput.value.trim() === '') && longitude) {
+                lngInput.value = longitude;
+            }
+        }
+        return; // Don't create duplicate modal
+    }
+    
+    // Reset flag when creating new form
+    userHasEditedCoordinates = false;
+    
     // Create modal
     const modal = document.createElement('div');
     modal.className = 'location-modal';
@@ -1195,6 +1226,29 @@ function showLocationForm(catId, latitude, longitude, recognitionEventId, imageP
     `;
     
     document.body.appendChild(modal);
+    currentLocationModal = modal;
+    
+    // Track if user has edited coordinates
+    const latInput = document.getElementById('locationLat');
+    const lngInput = document.getElementById('locationLng');
+    
+    if (latInput) {
+        latInput.addEventListener('input', () => {
+            userHasEditedCoordinates = true;
+        });
+        latInput.addEventListener('change', () => {
+            userHasEditedCoordinates = true;
+        });
+    }
+    
+    if (lngInput) {
+        lngInput.addEventListener('input', () => {
+            userHasEditedCoordinates = true;
+        });
+        lngInput.addEventListener('change', () => {
+            userHasEditedCoordinates = true;
+        });
+    }
     
     modal.querySelector('#locationForm').addEventListener('submit', (e) => {
         e.preventDefault();
@@ -1205,8 +1259,20 @@ function showLocationForm(catId, latitude, longitude, recognitionEventId, imageP
     modal.addEventListener('click', (e) => {
         if (e.target === modal) {
             modal.remove();
+            currentLocationModal = null;
+            userHasEditedCoordinates = false;
         }
     });
+    
+    // Clean up when modal is removed
+    const observer = new MutationObserver((mutations) => {
+        if (!document.body.contains(modal)) {
+            currentLocationModal = null;
+            userHasEditedCoordinates = false;
+            observer.disconnect();
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
 }
 
 function submitLocation(catId, recognitionEventId, imagePath, modal) {
@@ -1250,6 +1316,8 @@ function submitLocation(catId, recognitionEventId, imagePath, modal) {
             alert('位置记录成功！');
             modal.remove();
             hideLocationFAB();
+            currentRecognitionResult = null;
+            currentDesktopRecognitionResult = null;
         }
     })
     .catch(error => {
@@ -1413,12 +1481,17 @@ function renderRecognitionResults(result, targetEl = recognitionResultsEl) {
     targetEl.innerHTML = '';
 
     const matches = result.matches || [];
-    if (!matches.length) {
+    if (!matches.length || !matches[0].matched) {
         targetEl.innerHTML = '<p class="recognition-placeholder">未找到匹配的猫咪信息。您可以将照片提交给管理员补充到数据库中。</p>';
         currentDesktopRecognitionResult = null;
         hideDesktopLocationButton();
+        unknownCatCount++;
+        checkUnknownCatThreshold();
         return;
     }
+
+    // 识别到已知猫，重置计数器
+    unknownCatCount = 0;
 
     // Store recognition result for location recording
     if (matches[0] && matches[0].matched && matches[0].cat) {
@@ -1427,7 +1500,8 @@ function renderRecognitionResults(result, targetEl = recognitionResultsEl) {
             recognition_event_id: result.recognition_event_id,
             query_image_path: result.query_image_path
         };
-        showDesktopLocationButton();
+        // 立即请求位置并显示表单
+        requestDesktopLocationAndShowForm();
     } else {
         currentDesktopRecognitionResult = null;
         hideDesktopLocationButton();
@@ -1477,16 +1551,9 @@ function renderRecognitionResults(result, targetEl = recognitionResultsEl) {
 let desktopLocationButton = null;
 
 function showDesktopLocationButton() {
+    // 保留此函数以兼容可能的其他调用，但主要逻辑已改为自动显示表单
     if (!recognitionResultsEl) return;
-    
-    if (!desktopLocationButton) {
-        desktopLocationButton = document.createElement('button');
-        desktopLocationButton.className = 'desktop-location-btn';
-        desktopLocationButton.innerHTML = '📍 记录位置';
-        desktopLocationButton.addEventListener('click', handleDesktopLocationClick);
-        recognitionResultsEl.parentNode.insertBefore(desktopLocationButton, recognitionResultsEl.nextSibling);
-    }
-    desktopLocationButton.style.display = 'block';
+    requestDesktopLocationAndShowForm();
 }
 
 function hideDesktopLocationButton() {
@@ -1495,7 +1562,7 @@ function hideDesktopLocationButton() {
     }
 }
 
-function handleDesktopLocationClick() {
+function requestDesktopLocationAndShowForm() {
     if (!currentDesktopRecognitionResult || !currentDesktopRecognitionResult.match.matched) {
         return;
     }
@@ -1506,11 +1573,8 @@ function handleDesktopLocationClick() {
         return;
     }
     
-    // Get current location
+    // 立即请求位置
     if (navigator.geolocation) {
-        desktopLocationButton.disabled = true;
-        desktopLocationButton.textContent = '获取位置中...';
-        
         navigator.geolocation.getCurrentPosition(
             position => {
                 showLocationForm(
@@ -1520,11 +1584,9 @@ function handleDesktopLocationClick() {
                     currentDesktopRecognitionResult.recognition_event_id,
                     currentDesktopRecognitionResult.query_image_path
                 );
-                desktopLocationButton.disabled = false;
-                desktopLocationButton.textContent = '📍 记录位置';
             },
             error => {
-                alert('无法获取位置，请手动输入位置信息');
+                // 位置获取失败，仍然显示表单让用户手动输入
                 showLocationForm(
                     cat.id,
                     null,
@@ -1532,12 +1594,11 @@ function handleDesktopLocationClick() {
                     currentDesktopRecognitionResult.recognition_event_id,
                     currentDesktopRecognitionResult.query_image_path
                 );
-                desktopLocationButton.disabled = false;
-                desktopLocationButton.textContent = '📍 记录位置';
             },
             { timeout: 10000, enableHighAccuracy: true }
         );
     } else {
+        // 不支持地理位置，直接显示表单
         showLocationForm(
             cat.id,
             null,
