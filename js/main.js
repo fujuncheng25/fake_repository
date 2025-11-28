@@ -1100,38 +1100,41 @@ function requestLocationAndShowForm() {
         return;
     }
     
-    // 立即请求位置
+    // 如果表单已经显示，不要重复创建
+    if (currentLocationModal) {
+        return;
+    }
+    
+    // 先显示表单（坐标为空），然后异步获取位置
+    showLocationForm(
+        cat.id,
+        null,
+        null,
+        currentRecognitionResult.recognition_event_id,
+        currentRecognitionResult.query_image_path
+    );
+    
+    // 立即请求位置（异步更新，但只在用户未编辑时更新）
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             position => {
-                showLocationForm(
-                    cat.id,
-                    position.coords.latitude,
-                    position.coords.longitude,
-                    currentRecognitionResult.recognition_event_id,
-                    currentRecognitionResult.query_image_path
-                );
+                // 只在用户还没有编辑坐标时更新
+                if (!userHasEditedCoordinates) {
+                    showLocationForm(
+                        cat.id,
+                        position.coords.latitude,
+                        position.coords.longitude,
+                        currentRecognitionResult.recognition_event_id,
+                        currentRecognitionResult.query_image_path,
+                        true // updateOnlyIfEmpty flag
+                    );
+                }
             },
             error => {
-                // 位置获取失败，仍然显示表单让用户手动输入
-                showLocationForm(
-                    cat.id,
-                    null,
-                    null,
-                    currentRecognitionResult.recognition_event_id,
-                    currentRecognitionResult.query_image_path
-                );
+                // 位置获取失败，表单已经显示，用户可以手动输入
+                console.log('位置获取失败，用户可手动输入');
             },
             { timeout: 10000, enableHighAccuracy: true }
-        );
-    } else {
-        // 不支持地理位置，直接显示表单
-        showLocationForm(
-            cat.id,
-            null,
-            null,
-            currentRecognitionResult.recognition_event_id,
-            currentRecognitionResult.query_image_path
         );
     }
 }
@@ -1315,6 +1318,8 @@ function submitLocation(catId, recognitionEventId, imagePath, modal) {
         } else {
             alert('位置记录成功！');
             modal.remove();
+            currentLocationModal = null;
+            userHasEditedCoordinates = false;
             hideLocationFAB();
             currentRecognitionResult = null;
             currentDesktopRecognitionResult = null;
@@ -1573,38 +1578,41 @@ function requestDesktopLocationAndShowForm() {
         return;
     }
     
-    // 立即请求位置
+    // 如果表单已经显示，不要重复创建
+    if (currentLocationModal) {
+        return;
+    }
+    
+    // 先显示表单（坐标为空），然后异步获取位置
+    showLocationForm(
+        cat.id,
+        null,
+        null,
+        currentDesktopRecognitionResult.recognition_event_id,
+        currentDesktopRecognitionResult.query_image_path
+    );
+    
+    // 立即请求位置（异步更新，但只在用户未编辑时更新）
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             position => {
-                showLocationForm(
-                    cat.id,
-                    position.coords.latitude,
-                    position.coords.longitude,
-                    currentDesktopRecognitionResult.recognition_event_id,
-                    currentDesktopRecognitionResult.query_image_path
-                );
+                // 只在用户还没有编辑坐标时更新
+                if (!userHasEditedCoordinates) {
+                    showLocationForm(
+                        cat.id,
+                        position.coords.latitude,
+                        position.coords.longitude,
+                        currentDesktopRecognitionResult.recognition_event_id,
+                        currentDesktopRecognitionResult.query_image_path,
+                        true // updateOnlyIfEmpty flag
+                    );
+                }
             },
             error => {
-                // 位置获取失败，仍然显示表单让用户手动输入
-                showLocationForm(
-                    cat.id,
-                    null,
-                    null,
-                    currentDesktopRecognitionResult.recognition_event_id,
-                    currentDesktopRecognitionResult.query_image_path
-                );
+                // 位置获取失败，表单已经显示，用户可以手动输入
+                console.log('位置获取失败，用户可手动输入');
             },
             { timeout: 10000, enableHighAccuracy: true }
-        );
-    } else {
-        // 不支持地理位置，直接显示表单
-        showLocationForm(
-            cat.id,
-            null,
-            null,
-            currentDesktopRecognitionResult.recognition_event_id,
-            currentDesktopRecognitionResult.query_image_path
         );
     }
 }
