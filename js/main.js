@@ -1041,19 +1041,102 @@ function appendMobileLog(message) {
     }
 }
 
+let currentRecognitionResult = null;
+let locationFAB = null;
+let unknownCatCount = 0; // 连续未识别到已知猫的次数
+const UNKNOWN_CAT_THRESHOLD = 3; // 达到此次数后跳转到上传页面
+
 function handleMobileRecognitionResults(result) {
     if (!result) {
         updateMobileReport('识别失败，请稍后再试。', 'error');
+        hideLocationFAB();
+        unknownCatCount++;
+        checkUnknownCatThreshold();
         return;
     }
     const matches = Array.isArray(result.matches) ? result.matches : [];
-    if (!matches.length) {
+    if (!matches.length || !matches[0].matched) {
         updateMobileReport('未识别到已登记的猫咪。', 'info');
         appendMobileLog('暂无匹配结果。');
+        hideLocationFAB();
+        unknownCatCount++;
+        checkUnknownCatThreshold();
         return;
     }
+    
+    // 识别到已知猫，重置计数器
+    unknownCatCount = 0;
+    
     const topMatch = matches[0];
+    currentRecognitionResult = {
+        match: topMatch,
+        recognition_event_id: result.recognition_event_id,
+        query_image_path: result.query_image_path
+    };
     reportMobileRecognition(topMatch);
+    
+    // 立即请求位置并显示表单
+    requestLocationAndShowForm();
+}
+
+function checkUnknownCatThreshold() {
+    if (unknownCatCount >= UNKNOWN_CAT_THRESHOLD) {
+        if (confirm(`已连续${UNKNOWN_CAT_THRESHOLD}次未识别到已知猫咪，是否跳转到上传页面填写新猫咪信息？`)) {
+            window.location.href = '/upload.html';
+        } else {
+            unknownCatCount = 0; // 用户取消，重置计数器
+        }
+    }
+}
+
+function requestLocationAndShowForm() {
+    if (!currentRecognitionResult || !currentRecognitionResult.match.matched) {
+        return;
+    }
+    
+    const cat = currentRecognitionResult.match.cat;
+    if (!cat || !cat.id) {
+        alert('无法获取猫咪信息');
+        return;
+    }
+    
+    // 如果表单已经显示，不要重复创建
+    if (currentLocationModal) {
+        return;
+    }
+    
+    // 先显示表单（坐标为空），然后异步获取位置
+    showLocationForm(
+        cat.id,
+        null,
+        null,
+        currentRecognitionResult.recognition_event_id,
+        currentRecognitionResult.query_image_path
+    );
+    
+    // 立即请求位置（异步更新，但只在用户未编辑时更新）
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            position => {
+                // 只在用户还没有编辑坐标时更新
+                if (!userHasEditedCoordinates) {
+                    showLocationForm(
+                        cat.id,
+                        position.coords.latitude,
+                        position.coords.longitude,
+                        currentRecognitionResult.recognition_event_id,
+                        currentRecognitionResult.query_image_path,
+                        true // updateOnlyIfEmpty flag
+                    );
+                }
+            },
+            error => {
+                // 位置获取失败，表单已经显示，用户可以手动输入
+                console.log('位置获取失败，用户可手动输入');
+            },
+            { timeout: 10000, enableHighAccuracy: true }
+        );
+    }
 }
 
 function reportMobileRecognition(match) {
@@ -1067,6 +1150,187 @@ function reportMobileRecognition(match) {
     if (navigator.vibrate) {
         navigator.vibrate(120);
     }
+}
+
+function showLocationFAB() {
+    // 保留此函数以兼容可能的其他调用，但主要逻辑已改为自动显示表单
+    if (!currentRecognitionResult || !currentRecognitionResult.match.matched) {
+        return;
+    }
+    // 不再显示悬浮按钮，直接请求位置并显示表单
+    requestLocationAndShowForm();
+}
+
+function hideLocationFAB() {
+    if (locationFAB) {
+        locationFAB.style.display = 'none';
+    }
+    currentRecognitionResult = null;
+}
+
+let currentLocationModal = null;
+let userHasEditedCoordinates = false;
+
+function showLocationForm(catId, latitude, longitude, recognitionEventId, imagePath, updateOnlyIfEmpty = false) {
+    // If modal already exists, check if we should update coordinates
+    if (currentLocationModal) {
+        if (updateOnlyIfEmpty && !userHasEditedCoordinates) {
+            const latInput = document.getElementById('locationLat');
+            const lngInput = document.getElementById('locationLng');
+            // Only update if fields are empty
+            if (latInput && (!latInput.value || latInput.value.trim() === '') && latitude) {
+                latInput.value = latitude;
+            }
+            if (lngInput && (!lngInput.value || lngInput.value.trim() === '') && longitude) {
+                lngInput.value = longitude;
+            }
+        }
+        return; // Don't create duplicate modal
+    }
+    
+    // Reset flag when creating new form
+    userHasEditedCoordinates = false;
+    
+    // Create modal
+    const modal = document.createElement('div');
+    modal.className = 'location-modal';
+    modal.innerHTML = `
+        <div class="location-modal-content">
+            <h3>记录猫咪位置</h3>
+            <form id="locationForm">
+                <div class="form-group">
+                    <label>纬度 (Latitude):</label>
+                    <input type="number" id="locationLat" step="any" value="${latitude || ''}" required>
+                </div>
+                <div class="form-group">
+                    <label>经度 (Longitude):</label>
+                    <input type="number" id="locationLng" step="any" value="${longitude || ''}" required>
+                </div>
+                <div class="form-group">
+                    <label>访问状态:</label>
+                    <select id="locationStatus">
+                        <option value="">请选择</option>
+                        <option value="健康">健康</option>
+                        <option value="需要关注">需要关注</option>
+                        <option value="需要医疗">需要医疗</option>
+                        <option value="正常活动">正常活动</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>备注:</label>
+                    <textarea id="locationNotes" rows="3" placeholder="可选的备注信息..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="this.closest('.location-modal').remove()">取消</button>
+                    <button type="submit" class="btn-primary">提交</button>
+                </div>
+            </form>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    currentLocationModal = modal;
+    
+    // Track if user has edited coordinates
+    const latInput = document.getElementById('locationLat');
+    const lngInput = document.getElementById('locationLng');
+    
+    if (latInput) {
+        latInput.addEventListener('input', () => {
+            userHasEditedCoordinates = true;
+        });
+        latInput.addEventListener('change', () => {
+            userHasEditedCoordinates = true;
+        });
+    }
+    
+    if (lngInput) {
+        lngInput.addEventListener('input', () => {
+            userHasEditedCoordinates = true;
+        });
+        lngInput.addEventListener('change', () => {
+            userHasEditedCoordinates = true;
+        });
+    }
+    
+    modal.querySelector('#locationForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        submitLocation(catId, recognitionEventId, imagePath, modal);
+    });
+    
+    // Close on background click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+            currentLocationModal = null;
+            userHasEditedCoordinates = false;
+        }
+    });
+    
+    // Clean up when modal is removed
+    const observer = new MutationObserver((mutations) => {
+        if (!document.body.contains(modal)) {
+            currentLocationModal = null;
+            userHasEditedCoordinates = false;
+            observer.disconnect();
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+}
+
+function submitLocation(catId, recognitionEventId, imagePath, modal) {
+    const lat = parseFloat(document.getElementById('locationLat').value);
+    const lng = parseFloat(document.getElementById('locationLng').value);
+    const status = document.getElementById('locationStatus').value;
+    const notes = document.getElementById('locationNotes').value;
+    
+    if (isNaN(lat) || isNaN(lng)) {
+        alert('请输入有效的经纬度');
+        return;
+    }
+    
+    const submitBtn = modal.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '提交中...';
+    
+    fetch('/api/cats/location', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+            cat_id: catId,
+            latitude: lat,
+            longitude: lng,
+            visit_status: status || null,
+            visit_notes: notes || null,
+            recognition_event_id: recognitionEventId || null,
+            image_path: imagePath || null
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('提交失败: ' + data.error);
+            submitBtn.disabled = false;
+            submitBtn.textContent = '提交';
+        } else {
+            alert('位置记录成功！');
+            modal.remove();
+            currentLocationModal = null;
+            userHasEditedCoordinates = false;
+            hideLocationFAB();
+            currentRecognitionResult = null;
+            currentDesktopRecognitionResult = null;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('提交失败，请稍后重试');
+        submitBtn.disabled = false;
+        submitBtn.textContent = '提交';
+    });
 }
 
 // ---------------- 猫脸识别功能 ----------------
@@ -1215,14 +1479,37 @@ function recognizeCatImage(imageBlob, source, options = {}) {
     });
 }
 
+let currentDesktopRecognitionResult = null;
+
 function renderRecognitionResults(result, targetEl = recognitionResultsEl) {
     if (!targetEl) return;
     targetEl.innerHTML = '';
 
     const matches = result.matches || [];
-    if (!matches.length) {
+    if (!matches.length || !matches[0].matched) {
         targetEl.innerHTML = '<p class="recognition-placeholder">未找到匹配的猫咪信息。您可以将照片提交给管理员补充到数据库中。</p>';
+        currentDesktopRecognitionResult = null;
+        hideDesktopLocationButton();
+        unknownCatCount++;
+        checkUnknownCatThreshold();
         return;
+    }
+
+    // 识别到已知猫，重置计数器
+    unknownCatCount = 0;
+
+    // Store recognition result for location recording
+    if (matches[0] && matches[0].matched && matches[0].cat) {
+        currentDesktopRecognitionResult = {
+            match: matches[0],
+            recognition_event_id: result.recognition_event_id,
+            query_image_path: result.query_image_path
+        };
+        // 立即请求位置并显示表单
+        requestDesktopLocationAndShowForm();
+    } else {
+        currentDesktopRecognitionResult = null;
+        hideDesktopLocationButton();
     }
 
     matches.forEach(match => {
@@ -1264,6 +1551,70 @@ function renderRecognitionResults(result, targetEl = recognitionResultsEl) {
 
         targetEl.appendChild(card);
     });
+}
+
+let desktopLocationButton = null;
+
+function showDesktopLocationButton() {
+    // 保留此函数以兼容可能的其他调用，但主要逻辑已改为自动显示表单
+    if (!recognitionResultsEl) return;
+    requestDesktopLocationAndShowForm();
+}
+
+function hideDesktopLocationButton() {
+    if (desktopLocationButton) {
+        desktopLocationButton.style.display = 'none';
+    }
+}
+
+function requestDesktopLocationAndShowForm() {
+    if (!currentDesktopRecognitionResult || !currentDesktopRecognitionResult.match.matched) {
+        return;
+    }
+    
+    const cat = currentDesktopRecognitionResult.match.cat;
+    if (!cat || !cat.id) {
+        alert('无法获取猫咪信息');
+        return;
+    }
+    
+    // 如果表单已经显示，不要重复创建
+    if (currentLocationModal) {
+        return;
+    }
+    
+    // 先显示表单（坐标为空），然后异步获取位置
+    showLocationForm(
+        cat.id,
+        null,
+        null,
+        currentDesktopRecognitionResult.recognition_event_id,
+        currentDesktopRecognitionResult.query_image_path
+    );
+    
+    // 立即请求位置（异步更新，但只在用户未编辑时更新）
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            position => {
+                // 只在用户还没有编辑坐标时更新
+                if (!userHasEditedCoordinates) {
+                    showLocationForm(
+                        cat.id,
+                        position.coords.latitude,
+                        position.coords.longitude,
+                        currentDesktopRecognitionResult.recognition_event_id,
+                        currentDesktopRecognitionResult.query_image_path,
+                        true // updateOnlyIfEmpty flag
+                    );
+                }
+            },
+            error => {
+                // 位置获取失败，表单已经显示，用户可以手动输入
+                console.log('位置获取失败，用户可手动输入');
+            },
+            { timeout: 10000, enableHighAccuracy: true }
+        );
+    }
 }
 
 function setRecognitionStatus(message, type = 'info', targetEl = recognitionStatusEl) {

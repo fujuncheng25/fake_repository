@@ -139,6 +139,7 @@ class DatabaseManager:
 
         self._ensure_column(cursor, 'users', 'is_verified', 'BOOLEAN DEFAULT 0')
         self._ensure_column(cursor, 'users', 'verification_token', 'TEXT')
+        self._ensure_column(cursor, 'users', 'is_super_admin', 'BOOLEAN DEFAULT 0')
 
         cursor.execute(
             '''
@@ -227,6 +228,26 @@ class DatabaseManager:
         '''
         )
 
+        cursor.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS cat_location_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cat_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                visit_status TEXT,
+                visit_notes TEXT,
+                recognition_event_id INTEGER,
+                image_path TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (cat_id) REFERENCES cats(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (recognition_event_id) REFERENCES cat_recognition_events(id)
+            )
+        '''
+        )
+
         self._ensure_column(cursor, 'users', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
 
         self._initialize_content_defaults(cursor)
@@ -283,13 +304,27 @@ class DatabaseManager:
             )
 
     def _initialize_admin_user(self, cursor) -> None:
-        cursor.execute("SELECT COUNT(*) FROM users WHERE is_admin = 1")
-        if cursor.fetchone()[0] == 0:
+        """Initialize the preset super admin user. There can only be one super admin."""
+        # First, clear any existing super admins (shouldn't happen, but just in case)
+        cursor.execute("UPDATE users SET is_super_admin = 0")
+        
+        # Check if admin@cats.com exists
+        cursor.execute("SELECT id, is_super_admin FROM users WHERE email = ?", ("admin@cats.com",))
+        admin_user = cursor.fetchone()
+        
+        if admin_user:
+            # Admin user exists, ensure it's the super admin
+            cursor.execute(
+                "UPDATE users SET is_super_admin = 1, is_admin = 1, is_verified = 1 WHERE email = ?",
+                ("admin@cats.com",)
+            )
+        else:
+            # Create the preset super admin user
             password_hash = hashlib.sha256("admin123".encode()).hexdigest()
             cursor.execute(
                 '''
-                INSERT INTO users (name, email, password_hash, is_admin, is_verified)
-                VALUES (?, ?, ?, 1, 1)
+                INSERT INTO users (name, email, password_hash, is_admin, is_super_admin, is_verified)
+                VALUES (?, ?, ?, 1, 1, 1)
             ''',
                 ("Admin User", "admin@cats.com", password_hash),
             )
@@ -391,7 +426,7 @@ class DatabaseManager:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT id, name, email, is_admin, is_verified, created_at FROM users ORDER BY created_at DESC")
+        cursor.execute("SELECT id, name, email, is_admin, is_super_admin, is_verified, created_at FROM users ORDER BY created_at DESC")
         users = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return users
@@ -691,19 +726,76 @@ class DatabaseManager:
         conn.close()
         return success
     
-    def delete_user(self, user_id):
-        """Delete a user and related data"""
+    def update_user_admin_status(self, user_id, is_admin):
+        """Manually update user admin status (admin only)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE users 
+            SET is_admin = ?
+            WHERE id = ?
+        ''', (1 if is_admin else 0, user_id))
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
+    
+    def update_user_super_admin_status(self, user_id, is_super_admin):
+        """Update user super admin status. Only used internally for preset super admin account.
+        External calls to set super admin status are not allowed."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # If setting to super admin, first clear all existing super admins
+        # This ensures only one super admin exists at any time
+        if is_super_admin:
+            cursor.execute('''
+                UPDATE users 
+                SET is_super_admin = 0
+                WHERE is_super_admin = 1
+            ''')
+        
+        # Then set the specified user as super admin
+        cursor.execute('''
+            UPDATE users 
+            SET is_super_admin = ?
+            WHERE id = ?
+        ''', (1 if is_super_admin else 0, user_id))
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
+    
+    def delete_user(self, user_id, allow_delete_admin=False):
+        """Delete a user and related data
+        
+        Args:
+            user_id: ID of user to delete
+            allow_delete_admin: If True, allows deleting admin users (but not super admins)
+        """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         try:
+            # Check if user is super admin - never allow deleting super admins
+            cursor.execute('SELECT is_super_admin FROM users WHERE id = ?', (user_id,))
+            result = cursor.fetchone()
+            if result and result[0]:
+                conn.close()
+                return False
+            
             # Delete messages where user is sender or receiver
             cursor.execute('DELETE FROM messages WHERE sender_id = ? OR receiver_id = ?', (user_id, user_id))
             # Delete adoption requests by user
             cursor.execute('DELETE FROM adoption_requests WHERE user_id = ?', (user_id,))
             # Remove ownership of cats (keep cats but clear owner)
             cursor.execute('UPDATE cats SET owner_id = NULL WHERE owner_id = ?', (user_id,))
-            # Delete user record (only non-admin)
-            cursor.execute('DELETE FROM users WHERE id = ? AND is_admin = 0', (user_id,))
+            # Delete user record
+            if allow_delete_admin:
+                # Allow deleting admin users (but not super admins, checked above)
+                cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+            else:
+                # Only delete non-admin users
+                cursor.execute('DELETE FROM users WHERE id = ? AND is_admin = 0', (user_id,))
             success = cursor.rowcount > 0
             conn.commit()
             return success
@@ -1329,7 +1421,7 @@ class DatabaseManager:
         hash_distance: Optional[int],
         metadata: Dict,
         image_path: Optional[str],
-    ) -> None:
+    ) -> int:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute(
@@ -1353,8 +1445,146 @@ class DatabaseManager:
                 image_path,
             ),
         )
+        event_id = cursor.lastrowid
         conn.commit()
         conn.close()
+        return event_id
+
+    def add_location_history(
+        self,
+        cat_id: int,
+        user_id: int,
+        latitude: float,
+        longitude: float,
+        visit_status: Optional[str] = None,
+        visit_notes: Optional[str] = None,
+        recognition_event_id: Optional[int] = None,
+        image_path: Optional[str] = None,
+    ) -> int:
+        """Add a location history record for a cat"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            INSERT INTO cat_location_history (
+                cat_id,
+                user_id,
+                latitude,
+                longitude,
+                visit_status,
+                visit_notes,
+                recognition_event_id,
+                image_path
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+            (
+                cat_id,
+                user_id,
+                latitude,
+                longitude,
+                visit_status,
+                visit_notes,
+                recognition_event_id,
+                image_path,
+            ),
+        )
+        location_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return location_id
+
+    def get_location_history(
+        self,
+        start_year: Optional[int] = None,
+        end_year: Optional[int] = None,
+        cat_id: Optional[int] = None,
+    ) -> List[Dict]:
+        """Get location history records (admin only)"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        query = '''
+            SELECT
+                clh.id,
+                clh.cat_id,
+                COALESCE(c.name, '未知猫咪') AS cat_name,
+                clh.user_id,
+                COALESCE(u.name, '未知用户') AS user_name,
+                clh.latitude,
+                clh.longitude,
+                clh.visit_status,
+                clh.visit_notes,
+                clh.recognition_event_id,
+                clh.image_path,
+                clh.created_at
+            FROM cat_location_history clh
+            LEFT JOIN cats c ON c.id = clh.cat_id
+            LEFT JOIN users u ON u.id = clh.user_id
+            WHERE 1=1
+        '''
+        params = []
+        
+        if cat_id is not None:
+            query += ' AND clh.cat_id = ?'
+            params.append(cat_id)
+        
+        if start_year is not None:
+            query += ' AND strftime("%Y", clh.created_at) >= ?'
+            params.append(str(start_year))
+        
+        if end_year is not None:
+            query += ' AND strftime("%Y", clh.created_at) <= ?'
+            params.append(str(end_year))
+        
+        query += ' ORDER BY clh.created_at DESC'
+        
+        cursor.execute(query, params)
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
+
+    def get_location_by_id(self, location_id: int) -> Optional[Dict]:
+        """Get a single location history record by ID"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT
+                clh.id,
+                clh.cat_id,
+                c.name AS cat_name,
+                c.age,
+                c.gender,
+                c.description,
+                c.sterilized,
+                c.microchipped,
+                c.special_notes,
+                c.unique_markings,
+                c.identification_code,
+                c.image_path AS cat_image_path,
+                clh.user_id,
+                u.name AS user_name,
+                u.email AS user_email,
+                clh.latitude,
+                clh.longitude,
+                clh.visit_status,
+                clh.visit_notes,
+                clh.recognition_event_id,
+                clh.image_path,
+                clh.created_at
+            FROM cat_location_history clh
+            JOIN cats c ON c.id = clh.cat_id
+            JOIN users u ON u.id = clh.user_id
+            WHERE clh.id = ?
+        ''',
+            (location_id,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
 
 
 # Initialize database
@@ -1757,6 +1987,19 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": "Invalid cat or reference image ID"}).encode())
         elif self.path == '/api/cats/recognize':
             self.handle_recognize_cat()
+        elif self.path == '/api/cats/location':
+            self.handle_add_location()
+        elif self.path == '/api/admin/location-history' or self.path.startswith('/api/admin/location-history?'):
+            self.handle_get_location_history()
+        elif self.path.startswith('/api/admin/location-history/') and self.path.count('/') == 4:
+            path_parts = [part for part in self.path.split('/') if part]
+            try:
+                location_id = int(path_parts[3])
+                self.handle_get_location_by_id(location_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid location ID"}).encode())
         elif self.path == '/api/admin/cat-recognition/settings':
             self.handle_update_recognition_settings()
         elif self.path == '/api/logout':
@@ -1854,8 +2097,16 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(400)
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": "Invalid user ID"}).encode())
-        elif self.path == '/api/admin/generate-login-link':
-            self.handle_generate_admin_login_link()
+        elif '/api/users/' in self.path and self.path.endswith('/admin'):
+            # Handle set user as admin request (POST)
+            path_parts = self.path.split('/')
+            try:
+                user_id = int(path_parts[3])  # /api/users/{id}/admin
+                self.handle_set_user_admin(user_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid user ID"}).encode())
         elif self.path == '/api/user/change-password':
             self.handle_change_password()
         elif self.path == '/api/user/profile':
@@ -1913,6 +2164,16 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(400)
             self.end_headers()
             self.wfile.write(json.dumps({"error": "Invalid reference image ID"}).encode())
+        elif '/api/users/' in self.path and self.path.endswith('/admin'):
+            # Handle remove admin status (DELETE)
+            path_parts = self.path.split('/')
+            try:
+                user_id = int(path_parts[3])  # /api/users/{id}/admin
+                self.handle_remove_user_admin(user_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid user ID"}).encode())
         else:
             self.send_response(404)
             self.end_headers()
@@ -1968,10 +2229,25 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.handle_get_reference_images()
             elif self.path == '/api/admin/cat-recognition/events':
                 self.handle_get_recognition_events()
-            elif self.path == '/api/admin/login-tokens':
-                self.handle_get_admin_login_tokens()
             elif self.path == '/api/messages/recipients':
                 self.handle_get_message_recipients()
+            elif self.path == '/api/admin/location-history' or self.path.startswith('/api/admin/location-history?'):
+                self.handle_get_location_history()
+            elif self.path.startswith('/api/admin/location-history/'):
+                # Parse path to get location ID (handle query params)
+                parsed_path = urllib.parse.urlparse(self.path)
+                path_parts = [part for part in parsed_path.path.split('/') if part]
+                if len(path_parts) >= 4 and path_parts[0] == 'api' and path_parts[1] == 'admin' and path_parts[2] == 'location-history':
+                    try:
+                        location_id = int(path_parts[3])
+                        self.handle_get_location_by_id(location_id)
+                    except (ValueError, IndexError):
+                        self.send_response(400)
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"error": "Invalid location ID"}).encode())
+                else:
+                    self.send_response(404)
+                    self.end_headers()
             elif self.path.startswith('/api/admin/login'):
                 # Handle admin login via token
                 query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -2034,6 +2310,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.path = '/profile.html'
             elif path == '/admin-cat-editor':
                 self.path = '/admin-cat-editor.html'
+            elif path == '/admin-location-map':
+                self.path = '/admin-location-map.html'
             
             # 尝试提供静态文件
             try:
@@ -2072,21 +2350,22 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": "Invalid credentials"}).encode())
             return
         
-        # Prevent admin login via password - admins must use single-use login links
-        if user.get('is_admin'):
+        # Prevent super admin login via password - super admin must use single-use login links
+        # Regular admins can login with password just like regular users
+        if user.get('is_super_admin') or user.get('is_super_admin') == 1:
             self.send_response(403)
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "Admin accounts cannot login with password. Please use a single-use admin login link."}).encode())
+            self.wfile.write(json.dumps({"error": "Super admin account cannot login with password. Please use a single-use admin login link."}).encode())
             return
         
         if user['password_hash'] == hashlib.sha256(password.encode()).hexdigest():
             # Create auth token
             token = hashlib.sha256(f"{email}{user['password_hash']}".encode()).hexdigest()
             
-            # Set cookies
+            # Set cookies with 24-day expiration
             self.send_response(200)
-            self.send_header('Set-Cookie', f"user_email={email}; Path=/")
-            self.send_header('Set-Cookie', f"user_token={token}; Path=/")
+            self.send_header('Set-Cookie', f"user_email={email}; Path=/; Max-Age=2073600")
+            self.send_header('Set-Cookie', f"user_token={token}; Path=/; Max-Age=2073600")
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             
@@ -2094,7 +2373,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "id": user['id'],
                 "name": user['name'],
                 "email": user['email'],
-                "is_admin": bool(user['is_admin']),
+                "is_admin": bool(user.get('is_admin', False)),
+                "is_super_admin": bool(user.get('is_super_admin', False)),
                 "is_verified": bool(user.get('is_verified', False))
             }
             self.wfile.write(json.dumps(response).encode())
@@ -3040,7 +3320,7 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             query_image_path = save_uploaded_file('uploads/cat_queries', file_item.filename, image_bytes)
 
         top_match = next((match for match in raw_matches if match.matched), None)
-        db.record_recognition_event(
+        recognition_event_id = db.record_recognition_event(
             cat_id=top_match.cat_id if top_match else None,
             matched=bool(top_match),
             match_score=float(top_match.similarity) if top_match else 0.0,
@@ -3060,6 +3340,7 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             "settings": settings,
             "query_image_path": query_image_path,
             "hash_hex": hash_hex,
+            "recognition_event_id": recognition_event_id,
         }
 
         self.send_response(200)
@@ -3293,7 +3574,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "id": user['id'],
                 "name": user['name'],
                 "email": user['email'],
-                "is_admin": bool(user['is_admin']),
+                "is_admin": bool(user.get('is_admin', False)),
+                "is_super_admin": bool(user.get('is_super_admin', False)),
                 "is_verified": bool(user.get('is_verified', False))
             }
             self.wfile.write(json.dumps(response).encode())
@@ -4022,7 +4304,7 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": str(e)}).encode())
     
     def handle_delete_user(self, user_id):
-        """Delete a user account (admin only)"""
+        """Delete a user account (admin only, super admin can delete regular admins)"""
         user = self.get_current_user()
         if not user or not user['is_admin']:
             self.send_response(403)
@@ -4035,7 +4317,6 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         if content_length:
             self.rfile.read(content_length)
         
-        # Prevent deleting admin accounts
         target_user = db.get_user_by_id(user_id)
         if not target_user:
             self.send_response(404)
@@ -4043,14 +4324,27 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": "User not found"}).encode())
             return
         
-        if target_user.get('is_admin'):
+        # Check if target is super admin - cannot delete super admins
+        if target_user.get('is_super_admin') or target_user.get('is_super_admin') == 1:
             self.send_response(400)
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "Cannot delete administrator accounts"}).encode())
+            self.wfile.write(json.dumps({"error": "Cannot delete super administrator accounts"}).encode())
+            return
+        
+        # Regular admins can only delete non-admin users
+        # Super admins can delete regular admins
+        is_super_admin = user.get('is_super_admin') or user.get('is_super_admin') == 1
+        if target_user.get('is_admin') and not is_super_admin:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Only super administrators can delete regular administrator accounts"}).encode())
             return
         
         try:
-            success = db.delete_user(user_id)
+            # Allow deleting admin users if current user is super admin
+            is_super_admin = user.get('is_super_admin') or user.get('is_super_admin') == 1
+            allow_delete_admin = is_super_admin and target_user.get('is_admin')
+            success = db.delete_user(user_id, allow_delete_admin=allow_delete_admin)
             if success:
                 self.send_response(200)
                 self.end_headers()
@@ -4064,90 +4358,136 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
     
-    def handle_generate_admin_login_link(self):
-        """Generate a single-use admin login link (admin only)"""
+    def handle_set_user_admin(self, user_id):
+        """Set user as admin (super admin only)"""
         user = self.get_current_user()
-        if not user or not user['is_admin']:
+        if not user or not (user.get('is_super_admin') or user.get('is_super_admin') == 1):
             self.send_response(403)
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            self.wfile.write(json.dumps({"error": "Super admin access required"}).encode())
             return
         
+        # Consume request body if present
         content_length = int(self.headers.get('Content-Length', 0) or 0)
-        expires_in_hours = 24  # Default 24 hours
+        if content_length:
+            self.rfile.read(content_length)
         
-        if content_length > 0:
-            post_data = self.rfile.read(content_length)
-            try:
-                data = json.loads(post_data.decode('utf-8'))
-                expires_in_hours = data.get('expires_in_hours', 24)
-            except:
-                pass
+        # Check if target user exists
+        target_user = db.get_user_by_id(user_id)
+        if not target_user:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "User not found"}).encode())
+            return
+        
+        # Prevent setting self as admin (redundant but safe)
+        if target_user.get('is_admin'):
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "User is already an administrator"}).encode())
+            return
         
         try:
-            token = db.create_admin_login_token(user['id'], expires_in_hours)
-            
-            # Get base URL from settings or use default
-            base_url = db.get_setting('base_url') or f"http://localhost:{PORT}"
-            login_url = f"{base_url}/api/admin/login?token={token}"
-            
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                "token": token,
-                "login_url": login_url,
-                "expires_in_hours": expires_in_hours,
-                "message": "Admin login link generated successfully"
-            }).encode())
+            success = db.update_user_admin_status(user_id, True)
+            if success:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": "User has been set as administrator successfully"}).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "User not found or could not be updated"}).encode())
         except Exception as e:
             self.send_response(500)
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
     
-    def handle_get_admin_login_tokens(self):
-        """Get list of admin login tokens (admin only)"""
+    def handle_remove_user_admin(self, user_id):
+        """Remove admin status from user (super admin only)"""
         user = self.get_current_user()
-        if not user or not user['is_admin']:
+        if not user or not (user.get('is_super_admin') or user.get('is_super_admin') == 1):
             self.send_response(403)
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            self.wfile.write(json.dumps({"error": "Super admin access required"}).encode())
+            return
+        
+        # Consume request body if present
+        content_length = int(self.headers.get('Content-Length', 0) or 0)
+        if content_length:
+            self.rfile.read(content_length)
+        
+        # Check if target user exists
+        target_user = db.get_user_by_id(user_id)
+        if not target_user:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "User not found"}).encode())
+            return
+        
+        # Cannot remove super admin status
+        if target_user.get('is_super_admin') or target_user.get('is_super_admin') == 1:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Cannot remove super administrator status"}).encode())
+            return
+        
+        # Check if user is already not an admin
+        if not target_user.get('is_admin'):
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "User is not an administrator"}).encode())
             return
         
         try:
-            tokens = db.get_admin_login_tokens(50)
-            # Check if tokens are expired or still valid
-            from datetime import datetime
-            now = datetime.now()
-            for token in tokens:
-                token['used'] = bool(token['used'])
-                expires_at = datetime.strptime(token['expires_at'], '%Y-%m-%d %H:%M:%S') if isinstance(token['expires_at'], str) else token['expires_at']
-                token['expired'] = expires_at < now
-            
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps(tokens).encode())
+            success = db.update_user_admin_status(user_id, False)
+            if success:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": "User admin status has been removed successfully"}).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "User not found or could not be updated"}).encode())
         except Exception as e:
             self.send_response(500)
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
     
     def handle_admin_login_with_token(self, token):
-        """Authenticate admin using a single-use token"""
+        """Authenticate using a single-use token. Only the preset super admin can use this.
+        First logs out any currently logged-in user, then logs in as super admin."""
         try:
             user_id = db.validate_and_use_admin_token(token)
             
             if user_id:
                 user = db.get_user_by_id(user_id)
-                if user and user.get('is_admin'):
+                if user:
+                    # Verify that this user is the preset super admin
+                    # Only admin@cats.com should be able to login via token
+                    if user.get('email') != 'admin@cats.com':
+                        self.send_response(403)
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"error": "Only the preset super admin account can use login links"}).encode())
+                        return
+                    
+                    # Ensure the preset super admin has the correct flags
+                    if not user.get('is_super_admin'):
+                        db.update_user_super_admin_status(user_id, True)
+                        user = db.get_user_by_id(user_id)
+                    
+                    if not user.get('is_admin'):
+                        db.update_user_admin_status(user_id, True)
+                    
                     # Create auth token
                     auth_token = hashlib.sha256(f"{user['email']}{user['password_hash']}".encode()).hexdigest()
                     
-                    # Set cookies
+                    # First, clear any existing cookies (log out current user)
+                    # Then set new cookies for super admin login with 24-day expiration
                     self.send_response(200)
-                    self.send_header('Set-Cookie', f"user_email={user['email']}; Path=/")
-                    self.send_header('Set-Cookie', f"user_token={auth_token}; Path=/")
+                    self.send_header('Set-Cookie', 'user_email=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT')
+                    self.send_header('Set-Cookie', 'user_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT')
+                    self.send_header('Set-Cookie', f"user_email={user['email']}; Path=/; Max-Age=2073600")
+                    self.send_header('Set-Cookie', f"user_token={auth_token}; Path=/; Max-Age=2073600")
                     self.send_header('Content-type', 'application/json')
                     self.end_headers()
                     
@@ -4156,8 +4496,9 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                         "name": user['name'],
                         "email": user['email'],
                         "is_admin": True,
+                        "is_super_admin": True,
                         "is_verified": bool(user.get('is_verified', False)),
-                        "message": "Admin login successful"
+                        "message": "Super admin login successful"
                     }
                     self.wfile.write(json.dumps(response).encode())
                 else:
@@ -4326,14 +4667,193 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     "error": "Failed to send email. Please try again later.",
                     "email_sent": False
                 }).encode())
-        else:
-            # User doesn't exist, but return same success message for security
+
+    def handle_add_location(self):
+        """Handle adding a location record for a cat"""
+        user = self.get_current_user()
+        if not user:
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Authentication required"}).encode())
+            return
+
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+        except (TypeError, ValueError):
+            content_length = 0
+        payload = self.rfile.read(content_length) if content_length else b'{}'
+        try:
+            data = json.loads(payload.decode('utf-8'))
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid JSON payload"}).encode())
+            return
+
+        cat_id = data.get('cat_id')
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+        visit_status = data.get('visit_status')
+        visit_notes = data.get('visit_notes')
+        recognition_event_id = data.get('recognition_event_id')
+        image_path = data.get('image_path')
+
+        if not cat_id or latitude is None or longitude is None:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "cat_id, latitude, and longitude are required"}).encode())
+            return
+
+        try:
+            cat_id = int(cat_id)
+            latitude = float(latitude)
+            longitude = float(longitude)
+            if recognition_event_id is not None:
+                recognition_event_id = int(recognition_event_id)
+        except (ValueError, TypeError):
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid data types"}).encode())
+            return
+
+        # Validate year range (1999-3000)
+        import datetime
+        current_year = datetime.datetime.now().year
+        if not (1999 <= current_year <= 3000):
+            # This is just a sanity check, actual validation happens at query time
+            pass
+
+        try:
+            location_id = db.add_location_history(
+                cat_id=cat_id,
+                user_id=user['id'],
+                latitude=latitude,
+                longitude=longitude,
+                visit_status=visit_status,
+                visit_notes=visit_notes,
+                recognition_event_id=recognition_event_id,
+                image_path=image_path,
+            )
             self.send_response(200)
+            self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({
-                "message": "If an account exists with this email, a verification code has been sent.",
-                "email_sent": True
+                "message": "Location recorded successfully",
+                "location_id": location_id
             }).encode())
+        except Exception as exc:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": f"Failed to record location: {str(exc)}"}).encode())
+
+    def handle_get_location_history(self):
+        """Get location history records (admin only)"""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            start_year = query_params.get('start_year', [None])[0]
+            end_year = query_params.get('end_year', [None])[0]
+            cat_id = query_params.get('cat_id', [None])[0]
+
+            start_year = int(start_year) if start_year else None
+            end_year = int(end_year) if end_year else None
+            cat_id = int(cat_id) if cat_id else None
+
+            # Validate year range (1999-3000)
+            if start_year is not None and not (1999 <= start_year <= 3000):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "start_year must be between 1999 and 3000"}).encode())
+                return
+
+            if end_year is not None and not (1999 <= end_year <= 3000):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "end_year must be between 1999 and 3000"}).encode())
+                return
+
+            locations = db.get_location_history(
+                start_year=start_year,
+                end_year=end_year,
+                cat_id=cat_id,
+            )
+
+            # Ensure locations is a list
+            if not isinstance(locations, list):
+                locations = []
+
+            # Convert boolean values and ensure all fields are properly serialized
+            for loc in locations:
+                if 'visit_status' in loc and loc['visit_status'] is None:
+                    loc['visit_status'] = None
+                # Ensure numeric fields are properly converted
+                if 'latitude' in loc:
+                    loc['latitude'] = float(loc['latitude']) if loc['latitude'] is not None else None
+                if 'longitude' in loc:
+                    loc['longitude'] = float(loc['longitude']) if loc['longitude'] is not None else None
+
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(locations, ensure_ascii=False).encode())
+        except ValueError as ve:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": f"Invalid query parameters: {str(ve)}"}).encode())
+        except Exception as exc:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"Error in handle_get_location_history: {error_trace}")
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": f"Internal server error: {str(exc)}"}).encode())
+
+    def handle_get_location_by_id(self, location_id: int):
+        """Get a single location record by ID (admin only)"""
+        user = self.get_current_user()
+        if not user or not user.get('is_admin'):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Admin access required"}).encode())
+            return
+
+        try:
+            location = db.get_location_by_id(location_id)
+            if not location:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Location not found"}).encode())
+                return
+
+            # Convert boolean values
+            if 'sterilized' in location:
+                location['sterilized'] = bool(location.get('sterilized'))
+            if 'microchipped' in location:
+                location['microchipped'] = bool(location.get('microchipped'))
+            
+            # Ensure numeric fields are properly converted
+            if 'latitude' in location:
+                location['latitude'] = float(location['latitude']) if location['latitude'] is not None else None
+            if 'longitude' in location:
+                location['longitude'] = float(location['longitude']) if location['longitude'] is not None else None
+
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(location, ensure_ascii=False).encode())
+        except Exception as exc:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"Error in handle_get_location_by_id: {error_trace}")
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": f"Internal server error: {str(exc)}"}, ensure_ascii=False).encode())
     
     def handle_verify_reset_code(self):
         """Verify password reset code"""
@@ -4435,54 +4955,51 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 # 设置当前工作目录
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-# Generate admin login link on startup
+# Generate super admin login link on startup
 def generate_startup_admin_login_link():
-    """Generate and display admin login link on server startup"""
+    """Generate and display super admin login link on server startup.
+    Only the preset super admin account (admin@cats.com) can use this link."""
     try:
-        # Find first admin user
-        admin_user = None
-        users = db.get_all_users()
-        for user in users:
-            # Check if user is admin (handle both boolean and integer)
-            is_admin = user.get('is_admin')
-            if is_admin or is_admin == 1:
-                # Get full user data by ID
-                admin_user = db.get_user_by_id(user['id'])
-                break
+        # Get the preset super admin account
+        super_admin_user = db.get_user_by_email('admin@cats.com')
         
-        # If not found in users list, try by default admin email
-        if not admin_user:
-            admin_user = db.get_user_by_email('admin@cats.com')
-        
-        if not admin_user or not (admin_user.get('is_admin') or admin_user.get('is_admin') == 1):
-            print("\n⚠️  警告: 未找到管理员账户")
-            print("   服务器将无法使用管理员功能")
+        if not super_admin_user:
+            print("\n⚠️  警告: 未找到预设的超级管理员账户 (admin@cats.com)")
+            print("   Warning: Preset super admin account (admin@cats.com) not found")
+            print("   服务器将无法使用超级管理员功能")
             return
         
-        # Generate admin login token (expires in 24 hours)
-        token = db.create_admin_login_token(admin_user['id'], expires_in_hours=24)
+        # Ensure the preset account is marked as super admin
+        if not (super_admin_user.get('is_super_admin') or super_admin_user.get('is_super_admin') == 1):
+            db.update_user_super_admin_status(super_admin_user['id'], True)
+            super_admin_user = db.get_user_by_id(super_admin_user['id'])
+        
+        # Generate admin login token for the preset super admin (expires in 24 hours)
+        token = db.create_admin_login_token(super_admin_user['id'], expires_in_hours=24)
         
         # Get base URL from settings or use default
         base_url = db.get_setting('base_url') or f"http://{HOST}:{PORT}"
         login_url = f"{base_url}/api/admin/login?token={token}"
         
-        # Display admin login link in console
+        # Display super admin login link in console
         print("\n" + "="*80)
-        print("🔐 管理员登录链接 (Admin Login Link)")
+        print("🔐 超级管理员登录链接 (Super Admin Login Link)")
         print("="*80)
-        print(f"\n👤 管理员账户 (Admin User): {admin_user['name']} ({admin_user['email']})")
+        print(f"\n👤 预设超级管理员账户 (Preset Super Admin): {super_admin_user['name']} ({super_admin_user['email']})")
         print(f"⏰ 有效期 (Expires): 24小时 (24 hours)")
         print(f"\n📋 登录链接 (Login Link):")
         print("-"*80)
         print(login_url)
         print("-"*80)
-        print("\n💡 提示: 此链接只能使用一次，使用后立即失效")
-        print("   Note: This link is single-use and will expire after first use")
+        print("\n💡 提示: 此链接只能使用一次，使用后立即失效。")
+        print("   只有预设的超级管理员账户可以使用此链接登录。")
+        print("   Note: This link is single-use and will expire after first use.")
+        print("   Only the preset super admin account can use this link to login.")
         print("="*80 + "\n")
         
     except Exception as e:
-        print(f"\n⚠️  警告: 生成管理员登录链接时出错: {str(e)}")
-        print("   Warning: Error generating admin login link:", str(e))
+        print(f"\n⚠️  警告: 生成超级管理员登录链接时出错: {str(e)}")
+        print("   Warning: Error generating super admin login link:", str(e))
 
 # Generate admin login link on startup
 generate_startup_admin_login_link()
