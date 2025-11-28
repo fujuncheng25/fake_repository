@@ -1503,47 +1503,67 @@
         }
 
         function loadUsers() {
-            fetch('/api/users')
+            // Get current user info first to check permissions
+            fetch('/api/current_user')
                 .then(response => response.json())
-                .then(users => {
-                    document.getElementById('usersCount').textContent = users.length;
-                    const tbody = document.querySelector('#usersTable tbody');
-                    tbody.innerHTML = '';
-                    
-                    users.forEach(user => {
-                        const row = tbody.insertRow();
-                        const isVerified = user.is_verified !== undefined ? user.is_verified : false;
-                        const verifiedStatus = isVerified
-                            ? '<span class="status-badge status-approved">已验证</span>'
-                            : '<span class="status-badge status-pending">未验证</span>';
-                        const verifyButton = !user.is_admin && !user.is_super_admin
-                            ? (isVerified
-                                ? `<button class="btn btn-secondary" onclick="toggleUserVerification(${user.id}, false)">取消验证</button>`
-                                : `<button class="btn btn-primary" onclick="toggleUserVerification(${user.id}, true)">验证用户</button>`)
-                            : '';
-                        const deleteButton = !user.is_admin && !user.is_super_admin
-                            ? `<button class="btn btn-danger" onclick="deleteUser(${user.id})">删除</button>`
-                            : '';
-                        const setAdminButton = !user.is_admin && !user.is_super_admin
-                            ? `<button class="btn btn-secondary" onclick="setUserAsAdmin(${user.id})">设为管理员</button>`
-                            : '';
+                .then(currentUser => {
+                    return fetch('/api/users')
+                        .then(response => response.json())
+                        .then(users => {
+                            document.getElementById('usersCount').textContent = users.length;
+                            const tbody = document.querySelector('#usersTable tbody');
+                            tbody.innerHTML = '';
+                            
+                            const isCurrentUserSuperAdmin = currentUser.is_super_admin || currentUser.is_super_admin === 1;
+                            
+                            users.forEach(user => {
+                                const row = tbody.insertRow();
+                                const isVerified = user.is_verified !== undefined ? user.is_verified : false;
+                                const verifiedStatus = isVerified
+                                    ? '<span class="status-badge status-approved">已验证</span>'
+                                    : '<span class="status-badge status-pending">未验证</span>';
+                                const verifyButton = !user.is_admin && !user.is_super_admin
+                                    ? (isVerified
+                                        ? `<button class="btn btn-secondary" onclick="toggleUserVerification(${user.id}, false)">取消验证</button>`
+                                        : `<button class="btn btn-primary" onclick="toggleUserVerification(${user.id}, true)">验证用户</button>`)
+                                    : '';
+                                
+                                // Super admin can delete regular admins and regular users
+                                // Regular admin can only delete regular users
+                                // Cannot delete super admins
+                                const canDelete = !user.is_super_admin && (
+                                    (isCurrentUserSuperAdmin && user.is_admin) || // Super admin can delete regular admins
+                                    !user.is_admin // Anyone can delete regular users
+                                );
+                                const deleteButton = canDelete
+                                    ? `<button class="btn btn-danger" onclick="deleteUser(${user.id})">删除</button>`
+                                    : '';
+                                
+                                const setAdminButton = !user.is_admin && !user.is_super_admin && isCurrentUserSuperAdmin
+                                    ? `<button class="btn btn-secondary" onclick="setUserAsAdmin(${user.id})">设为管理员</button>`
+                                    : '';
+                                const removeAdminButton = user.is_admin && !user.is_super_admin && isCurrentUserSuperAdmin
+                                    ? `<button class="btn btn-secondary" onclick="removeUserAdmin(${user.id})">取消管理员</button>`
+                                    : '';
 
-                        row.innerHTML = `
-                            <td>${user.id}</td>
-                            <td>${user.name}</td>
-                            <td>${user.email}</td>
-                            <td>${user.is_super_admin ? '超级管理员' : (user.is_admin ? '管理员' : '普通用户')}</td>
-                            <td>${verifiedStatus}</td>
-                            <td>${new Date(user.created_at).toLocaleDateString()}</td>
-                            <td>
-                                <div class="action-buttons">
-                                    ${verifyButton}
-                                    ${setAdminButton}
-                                    ${deleteButton}
-                                </div>
-                            </td>
-                        `;
-                    });
+                                row.innerHTML = `
+                                    <td>${user.id}</td>
+                                    <td>${user.name}</td>
+                                    <td>${user.email}</td>
+                                    <td>${user.is_super_admin ? '超级管理员' : (user.is_admin ? '管理员' : '普通用户')}</td>
+                                    <td>${verifiedStatus}</td>
+                                    <td>${new Date(user.created_at).toLocaleDateString()}</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            ${verifyButton}
+                                            ${setAdminButton}
+                                            ${removeAdminButton}
+                                            ${deleteButton}
+                                        </div>
+                                    </td>
+                                `;
+                            });
+                        });
                 })
                 .catch(error => console.error('Error loading users:', error));
         }
@@ -2065,6 +2085,32 @@
             .catch(error => {
                 console.error('Error:', error);
                 alert('设置失败，请重试');
+            });
+        }
+
+        function removeUserAdmin(userId) {
+            if (!confirm('确定要取消此用户的管理员权限吗？')) {
+                return;
+            }
+            
+            fetch(`/api/users/${userId}/admin`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    alert('已成功取消用户的管理员权限！');
+                    loadUsers();
+                } else {
+                    alert(data.error || '取消失败');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('取消失败，请重试');
             });
         }
 

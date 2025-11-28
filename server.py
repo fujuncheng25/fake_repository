@@ -304,13 +304,27 @@ class DatabaseManager:
             )
 
     def _initialize_admin_user(self, cursor) -> None:
-        cursor.execute("SELECT COUNT(*) FROM users WHERE is_admin = 1")
-        if cursor.fetchone()[0] == 0:
+        """Initialize the preset super admin user. There can only be one super admin."""
+        # First, clear any existing super admins (shouldn't happen, but just in case)
+        cursor.execute("UPDATE users SET is_super_admin = 0")
+        
+        # Check if admin@cats.com exists
+        cursor.execute("SELECT id, is_super_admin FROM users WHERE email = ?", ("admin@cats.com",))
+        admin_user = cursor.fetchone()
+        
+        if admin_user:
+            # Admin user exists, ensure it's the super admin
+            cursor.execute(
+                "UPDATE users SET is_super_admin = 1, is_admin = 1, is_verified = 1 WHERE email = ?",
+                ("admin@cats.com",)
+            )
+        else:
+            # Create the preset super admin user
             password_hash = hashlib.sha256("admin123".encode()).hexdigest()
             cursor.execute(
                 '''
-                INSERT INTO users (name, email, password_hash, is_admin, is_verified)
-                VALUES (?, ?, ?, 1, 1)
+                INSERT INTO users (name, email, password_hash, is_admin, is_super_admin, is_verified)
+                VALUES (?, ?, ?, 1, 1, 1)
             ''',
                 ("Admin User", "admin@cats.com", password_hash),
             )
@@ -727,9 +741,21 @@ class DatabaseManager:
         return success
     
     def update_user_super_admin_status(self, user_id, is_super_admin):
-        """Update user super admin status"""
+        """Update user super admin status. Only used internally for preset super admin account.
+        External calls to set super admin status are not allowed."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
+        
+        # If setting to super admin, first clear all existing super admins
+        # This ensures only one super admin exists at any time
+        if is_super_admin:
+            cursor.execute('''
+                UPDATE users 
+                SET is_super_admin = 0
+                WHERE is_super_admin = 1
+            ''')
+        
+        # Then set the specified user as super admin
         cursor.execute('''
             UPDATE users 
             SET is_super_admin = ?
@@ -740,19 +766,36 @@ class DatabaseManager:
         conn.close()
         return success
     
-    def delete_user(self, user_id):
-        """Delete a user and related data"""
+    def delete_user(self, user_id, allow_delete_admin=False):
+        """Delete a user and related data
+        
+        Args:
+            user_id: ID of user to delete
+            allow_delete_admin: If True, allows deleting admin users (but not super admins)
+        """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         try:
+            # Check if user is super admin - never allow deleting super admins
+            cursor.execute('SELECT is_super_admin FROM users WHERE id = ?', (user_id,))
+            result = cursor.fetchone()
+            if result and result[0]:
+                conn.close()
+                return False
+            
             # Delete messages where user is sender or receiver
             cursor.execute('DELETE FROM messages WHERE sender_id = ? OR receiver_id = ?', (user_id, user_id))
             # Delete adoption requests by user
             cursor.execute('DELETE FROM adoption_requests WHERE user_id = ?', (user_id,))
             # Remove ownership of cats (keep cats but clear owner)
             cursor.execute('UPDATE cats SET owner_id = NULL WHERE owner_id = ?', (user_id,))
-            # Delete user record (only non-admin)
-            cursor.execute('DELETE FROM users WHERE id = ? AND is_admin = 0', (user_id,))
+            # Delete user record
+            if allow_delete_admin:
+                # Allow deleting admin users (but not super admins, checked above)
+                cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+            else:
+                # Only delete non-admin users
+                cursor.execute('DELETE FROM users WHERE id = ? AND is_admin = 0', (user_id,))
             success = cursor.rowcount > 0
             conn.commit()
             return success
@@ -2055,7 +2098,7 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": "Invalid user ID"}).encode())
         elif '/api/users/' in self.path and self.path.endswith('/admin'):
-            # Handle set user as admin request
+            # Handle set user as admin request (POST)
             path_parts = self.path.split('/')
             try:
                 user_id = int(path_parts[3])  # /api/users/{id}/admin
@@ -2121,6 +2164,16 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(400)
             self.end_headers()
             self.wfile.write(json.dumps({"error": "Invalid reference image ID"}).encode())
+        elif '/api/users/' in self.path and self.path.endswith('/admin'):
+            # Handle remove admin status (DELETE)
+            path_parts = self.path.split('/')
+            try:
+                user_id = int(path_parts[3])  # /api/users/{id}/admin
+                self.handle_remove_user_admin(user_id)
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid user ID"}).encode())
         else:
             self.send_response(404)
             self.end_headers()
@@ -2297,11 +2350,12 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": "Invalid credentials"}).encode())
             return
         
-        # Prevent admin login via password - admins must use single-use login links
-        if user.get('is_admin'):
+        # Prevent super admin login via password - super admin must use single-use login links
+        # Regular admins can login with password just like regular users
+        if user.get('is_super_admin') or user.get('is_super_admin') == 1:
             self.send_response(403)
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "Admin accounts cannot login with password. Please use a single-use admin login link."}).encode())
+            self.wfile.write(json.dumps({"error": "Super admin account cannot login with password. Please use a single-use admin login link."}).encode())
             return
         
         if user['password_hash'] == hashlib.sha256(password.encode()).hexdigest():
@@ -4250,7 +4304,7 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": str(e)}).encode())
     
     def handle_delete_user(self, user_id):
-        """Delete a user account (admin only)"""
+        """Delete a user account (admin only, super admin can delete regular admins)"""
         user = self.get_current_user()
         if not user or not user['is_admin']:
             self.send_response(403)
@@ -4263,7 +4317,6 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         if content_length:
             self.rfile.read(content_length)
         
-        # Prevent deleting admin accounts
         target_user = db.get_user_by_id(user_id)
         if not target_user:
             self.send_response(404)
@@ -4271,14 +4324,27 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": "User not found"}).encode())
             return
         
-        if target_user.get('is_admin'):
+        # Check if target is super admin - cannot delete super admins
+        if target_user.get('is_super_admin') or target_user.get('is_super_admin') == 1:
             self.send_response(400)
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "Cannot delete administrator accounts"}).encode())
+            self.wfile.write(json.dumps({"error": "Cannot delete super administrator accounts"}).encode())
+            return
+        
+        # Regular admins can only delete non-admin users
+        # Super admins can delete regular admins
+        is_super_admin = user.get('is_super_admin') or user.get('is_super_admin') == 1
+        if target_user.get('is_admin') and not is_super_admin:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Only super administrators can delete regular administrator accounts"}).encode())
             return
         
         try:
-            success = db.delete_user(user_id)
+            # Allow deleting admin users if current user is super admin
+            is_super_admin = user.get('is_super_admin') or user.get('is_super_admin') == 1
+            allow_delete_admin = is_super_admin and target_user.get('is_admin')
+            success = db.delete_user(user_id, allow_delete_admin=allow_delete_admin)
             if success:
                 self.send_response(200)
                 self.end_headers()
@@ -4336,28 +4402,90 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
     
+    def handle_remove_user_admin(self, user_id):
+        """Remove admin status from user (super admin only)"""
+        user = self.get_current_user()
+        if not user or not (user.get('is_super_admin') or user.get('is_super_admin') == 1):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Super admin access required"}).encode())
+            return
+        
+        # Consume request body if present
+        content_length = int(self.headers.get('Content-Length', 0) or 0)
+        if content_length:
+            self.rfile.read(content_length)
+        
+        # Check if target user exists
+        target_user = db.get_user_by_id(user_id)
+        if not target_user:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "User not found"}).encode())
+            return
+        
+        # Cannot remove super admin status
+        if target_user.get('is_super_admin') or target_user.get('is_super_admin') == 1:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Cannot remove super administrator status"}).encode())
+            return
+        
+        # Check if user is already not an admin
+        if not target_user.get('is_admin'):
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "User is not an administrator"}).encode())
+            return
+        
+        try:
+            success = db.update_user_admin_status(user_id, False)
+            if success:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": "User admin status has been removed successfully"}).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "User not found or could not be updated"}).encode())
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+    
     def handle_admin_login_with_token(self, token):
-        """Authenticate admin using a single-use token and set as super admin"""
+        """Authenticate using a single-use token. Only the preset super admin can use this.
+        First logs out any currently logged-in user, then logs in as super admin."""
         try:
             user_id = db.validate_and_use_admin_token(token)
             
             if user_id:
                 user = db.get_user_by_id(user_id)
                 if user:
-                    # Set user as super admin when logging in via token
-                    db.update_user_super_admin_status(user_id, True)
-                    # Also ensure they are admin
+                    # Verify that this user is the preset super admin
+                    # Only admin@cats.com should be able to login via token
+                    if user.get('email') != 'admin@cats.com':
+                        self.send_response(403)
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"error": "Only the preset super admin account can use login links"}).encode())
+                        return
+                    
+                    # Ensure the preset super admin has the correct flags
+                    if not user.get('is_super_admin'):
+                        db.update_user_super_admin_status(user_id, True)
+                        user = db.get_user_by_id(user_id)
+                    
                     if not user.get('is_admin'):
                         db.update_user_admin_status(user_id, True)
-                    
-                    # Refresh user data
-                    user = db.get_user_by_id(user_id)
                     
                     # Create auth token
                     auth_token = hashlib.sha256(f"{user['email']}{user['password_hash']}".encode()).hexdigest()
                     
-                    # Set cookies with 24-day expiration
+                    # First, clear any existing cookies (log out current user)
+                    # Then set new cookies for super admin login with 24-day expiration
                     self.send_response(200)
+                    self.send_header('Set-Cookie', 'user_email=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT')
+                    self.send_header('Set-Cookie', 'user_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT')
                     self.send_header('Set-Cookie', f"user_email={user['email']}; Path=/; Max-Age=2073600")
                     self.send_header('Set-Cookie', f"user_token={auth_token}; Path=/; Max-Age=2073600")
                     self.send_header('Content-type', 'application/json')
@@ -4829,44 +4957,24 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Generate super admin login link on startup
 def generate_startup_admin_login_link():
-    """Generate and display super admin login link on server startup"""
+    """Generate and display super admin login link on server startup.
+    Only the preset super admin account (admin@cats.com) can use this link."""
     try:
-        # Find first super admin user
-        super_admin_user = None
-        users = db.get_all_users()
-        for user in users:
-            # Check if user is super admin (handle both boolean and integer)
-            is_super_admin = user.get('is_super_admin')
-            if is_super_admin or is_super_admin == 1:
-                # Get full user data by ID
-                super_admin_user = db.get_user_by_id(user['id'])
-                break
-        
-        # If not found, try by default admin email
-        if not super_admin_user:
-            super_admin_user = db.get_user_by_email('admin@cats.com')
-            # If found but not super admin, make them super admin
-            if super_admin_user and not (super_admin_user.get('is_super_admin') or super_admin_user.get('is_super_admin') == 1):
-                db.update_user_super_admin_status(super_admin_user['id'], True)
-                super_admin_user = db.get_user_by_id(super_admin_user['id'])
-        
-        # If still not found, find any admin and make them super admin
-        if not super_admin_user:
-            users = db.get_all_users()
-            for user in users:
-                is_admin = user.get('is_admin')
-                if is_admin or is_admin == 1:
-                    super_admin_user = db.get_user_by_id(user['id'])
-                    db.update_user_super_admin_status(super_admin_user['id'], True)
-                    super_admin_user = db.get_user_by_id(super_admin_user['id'])
-                    break
+        # Get the preset super admin account
+        super_admin_user = db.get_user_by_email('admin@cats.com')
         
         if not super_admin_user:
-            print("\n⚠️  警告: 未找到超级管理员账户")
+            print("\n⚠️  警告: 未找到预设的超级管理员账户 (admin@cats.com)")
+            print("   Warning: Preset super admin account (admin@cats.com) not found")
             print("   服务器将无法使用超级管理员功能")
             return
         
-        # Generate admin login token (expires in 24 hours)
+        # Ensure the preset account is marked as super admin
+        if not (super_admin_user.get('is_super_admin') or super_admin_user.get('is_super_admin') == 1):
+            db.update_user_super_admin_status(super_admin_user['id'], True)
+            super_admin_user = db.get_user_by_id(super_admin_user['id'])
+        
+        # Generate admin login token for the preset super admin (expires in 24 hours)
         token = db.create_admin_login_token(super_admin_user['id'], expires_in_hours=24)
         
         # Get base URL from settings or use default
@@ -4877,14 +4985,16 @@ def generate_startup_admin_login_link():
         print("\n" + "="*80)
         print("🔐 超级管理员登录链接 (Super Admin Login Link)")
         print("="*80)
-        print(f"\n👤 超级管理员账户 (Super Admin User): {super_admin_user['name']} ({super_admin_user['email']})")
+        print(f"\n👤 预设超级管理员账户 (Preset Super Admin): {super_admin_user['name']} ({super_admin_user['email']})")
         print(f"⏰ 有效期 (Expires): 24小时 (24 hours)")
         print(f"\n📋 登录链接 (Login Link):")
         print("-"*80)
         print(login_url)
         print("-"*80)
-        print("\n💡 提示: 此链接只能使用一次，使用后立即失效。通过此链接登录的用户将被设置为超级管理员")
-        print("   Note: This link is single-use and will expire after first use. Users logging in via this link will be set as super admin")
+        print("\n💡 提示: 此链接只能使用一次，使用后立即失效。")
+        print("   只有预设的超级管理员账户可以使用此链接登录。")
+        print("   Note: This link is single-use and will expire after first use.")
+        print("   Only the preset super admin account can use this link to login.")
         print("="*80 + "\n")
         
     except Exception as e:
