@@ -823,6 +823,75 @@
             </div>
 
 
+            <div class="admin-section" id="databaseBackupSection" style="display: none;">
+                <h2>数据库备份与恢复</h2>
+                <div class="admin-content">
+                    <p class="info-note">⚠️ 此功能仅限超级管理员使用。可以下载完整的数据库备份，或从备份文件中选择性恢复数据。</p>
+                    
+                    <div class="panel-card" style="margin-bottom: 20px;">
+                        <h3>下载数据库备份</h3>
+                        <p class="info-note">下载完整的数据库备份文件。每次下载都包含所有数据。</p>
+                        <button id="downloadDatabaseBtn" class="btn btn-primary">下载完整数据库备份</button>
+                        <p id="downloadStatus" style="margin-top: 10px; color: #666; font-size: 14px;"></p>
+                    </div>
+                    
+                    <div class="panel-card">
+                        <h3>恢复数据库</h3>
+                        <p class="info-note">从备份文件中选择性恢复数据。请选择要恢复的数据类型。</p>
+                        <form id="restoreDatabaseForm" enctype="multipart/form-data">
+                            <div style="margin-bottom: 20px;">
+                                <label for="databaseFile" style="display: block; margin-bottom: 10px; font-weight: bold;">
+                                    选择数据库备份文件：
+                                </label>
+                                <input 
+                                    type="file" 
+                                    id="databaseFile" 
+                                    name="database_file"
+                                    accept=".db"
+                                    required
+                                    style="width: 100%; max-width: 400px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                                />
+                            </div>
+                            
+                            <div style="margin-bottom: 20px;">
+                                <label style="display: block; margin-bottom: 10px; font-weight: bold;">
+                                    选择要恢复的数据类型：
+                                </label>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                                    <label style="display: flex; align-items: center; cursor: pointer;">
+                                        <input type="checkbox" name="restore_users" value="true" style="margin-right: 8px;">
+                                        <span>用户登录数据</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; cursor: pointer;">
+                                        <input type="checkbox" name="restore_cats" value="true" style="margin-right: 8px;">
+                                        <span>猫咪数据（包括参考图片、识别事件、位置历史）</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; cursor: pointer;">
+                                        <input type="checkbox" name="restore_content" value="true" style="margin-right: 8px;">
+                                        <span>网站编辑内容</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; cursor: pointer;">
+                                        <input type="checkbox" name="restore_settings" value="true" style="margin-right: 8px;">
+                                        <span>系统设置</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; cursor: pointer;">
+                                        <input type="checkbox" name="restore_messages" value="true" style="margin-right: 8px;">
+                                        <span>消息数据</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; cursor: pointer;">
+                                        <input type="checkbox" name="restore_adoption_requests" value="true" style="margin-right: 8px;">
+                                        <span>领养申请数据</span>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" id="restoreDatabaseBtn" class="btn btn-primary">开始恢复</button>
+                            <p id="restoreStatus" style="margin-top: 10px; color: #666; font-size: 14px;"></p>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
             <div class="admin-section">
                 <h2>数据库可视化</h2>
                 <div class="admin-content">
@@ -935,6 +1004,14 @@
             document.getElementById('saveNotificationFromEmailBtn').addEventListener('click', saveNotificationFromEmail);
             document.getElementById('saveNotificationEmailsBtn').addEventListener('click', saveNotificationEmails);
             
+            const downloadDatabaseBtn = document.getElementById('downloadDatabaseBtn');
+            if (downloadDatabaseBtn) {
+                downloadDatabaseBtn.addEventListener('click', downloadDatabase);
+            }
+            const restoreDatabaseForm = document.getElementById('restoreDatabaseForm');
+            if (restoreDatabaseForm) {
+                restoreDatabaseForm.addEventListener('submit', handleRestoreDatabase);
+            }
 
             const catProfileForm = document.getElementById('catProfileForm');
             if (catProfileForm) {
@@ -1000,6 +1077,17 @@
                     if (!user.is_admin && !user.is_super_admin) {
                         alert('需要管理员权限访问此页面');
                         window.location.href = '/';
+                        return;
+                    }
+                    
+                    // Show database backup/restore section only for super admins
+                    const dbSection = document.getElementById('databaseBackupSection');
+                    if (dbSection) {
+                        if (user.is_super_admin) {
+                            dbSection.style.display = 'block';
+                        } else {
+                            dbSection.style.display = 'none';
+                        }
                     }
                 })
                 .catch(error => {
@@ -2111,6 +2199,149 @@
             .catch(error => {
                 console.error('Error:', error);
                 alert('取消失败，请重试');
+            });
+        }
+
+        function downloadDatabase() {
+            const statusEl = document.getElementById('downloadStatus');
+            if (statusEl) {
+                statusEl.textContent = '正在下载数据库...';
+                statusEl.style.color = '#666';
+            }
+            
+            fetch('/api/admin/database/download', {
+                method: 'GET',
+                credentials: 'include'
+            })
+            .then(response => {
+                if (response.ok) {
+                    // Get filename from Content-Disposition header or use default
+                    const contentDisposition = response.headers.get('Content-Disposition');
+                    let filename = 'database_backup.db';
+                    if (contentDisposition) {
+                        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                        if (filenameMatch) {
+                            filename = filenameMatch[1];
+                        }
+                    }
+                    
+                    return response.blob().then(blob => ({ blob, filename }));
+                } else {
+                    return response.json().then(data => Promise.reject(new Error(data.error || '下载失败')));
+                }
+            })
+            .then(({ blob, filename }) => {
+                // Create download link
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename;
+                
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                if (statusEl) {
+                    statusEl.textContent = '数据库下载成功！';
+                    statusEl.style.color = '#4CAF50';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                if (statusEl) {
+                    statusEl.textContent = error.message || '下载失败，请重试';
+                    statusEl.style.color = '#dc3545';
+                } else {
+                    alert(error.message || '下载失败，请重试');
+                }
+            });
+        }
+
+        function handleRestoreDatabase(event) {
+            event.preventDefault();
+            
+            const statusEl = document.getElementById('restoreStatus');
+            const form = event.target;
+            const fileInput = document.getElementById('databaseFile');
+            const restoreBtn = document.getElementById('restoreDatabaseBtn');
+            
+            if (!fileInput.files || fileInput.files.length === 0) {
+                if (statusEl) {
+                    statusEl.textContent = '请选择数据库备份文件';
+                    statusEl.style.color = '#dc3545';
+                }
+                return;
+            }
+            
+            // Check if at least one checkbox is selected
+            const checkboxes = form.querySelectorAll('input[type="checkbox"]');
+            let atLeastOneChecked = false;
+            checkboxes.forEach(cb => {
+                if (cb.checked) {
+                    atLeastOneChecked = true;
+                }
+            });
+            
+            if (!atLeastOneChecked) {
+                if (statusEl) {
+                    statusEl.textContent = '请至少选择一种要恢复的数据类型';
+                    statusEl.style.color = '#dc3545';
+                }
+                return;
+            }
+            
+            if (!confirm('确定要恢复数据库吗？此操作将覆盖选定的数据，请确保已备份当前数据库。')) {
+                return;
+            }
+            
+            // Prepare form data
+            const formData = new FormData(form);
+            
+            // Disable button and show status
+            if (restoreBtn) {
+                restoreBtn.disabled = true;
+                restoreBtn.textContent = '恢复中...';
+            }
+            if (statusEl) {
+                statusEl.textContent = '正在恢复数据库，请稍候...';
+                statusEl.style.color = '#666';
+            }
+            
+            fetch('/api/admin/database/restore', {
+                method: 'POST',
+                credentials: 'include',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    if (statusEl) {
+                        statusEl.textContent = '数据库恢复成功！';
+                        statusEl.style.color = '#4CAF50';
+                    } else {
+                        alert('数据库恢复成功！');
+                    }
+                    form.reset();
+                } else {
+                    throw new Error(data.error || '恢复失败');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                if (statusEl) {
+                    statusEl.textContent = error.message || '恢复失败，请重试';
+                    statusEl.style.color = '#dc3545';
+                } else {
+                    alert(error.message || '恢复失败，请重试');
+                }
+            })
+            .finally(() => {
+                if (restoreBtn) {
+                    restoreBtn.disabled = false;
+                    restoreBtn.textContent = '开始恢复';
+                }
             });
         }
 

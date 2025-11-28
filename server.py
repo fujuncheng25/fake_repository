@@ -1585,6 +1585,188 @@ class DatabaseManager:
         row = cursor.fetchone()
         conn.close()
         return dict(row) if row else None
+    
+    def backup_database(self, backup_path: str) -> bool:
+        """Create a backup of the entire database"""
+        try:
+            import shutil
+            shutil.copy2(self.db_path, backup_path)
+            return True
+        except Exception as e:
+            print(f"Error backing up database: {e}")
+            return False
+    
+    def get_database_bytes(self) -> bytes:
+        """Get the complete database file as bytes"""
+        try:
+            with open(self.db_path, 'rb') as f:
+                return f.read()
+        except Exception as e:
+            print(f"Error reading database: {e}")
+            return b''
+    
+    def restore_database(self, backup_db_path: str, restore_options: Dict[str, bool]) -> bool:
+        """Restore database with selective restoration options
+        
+        Args:
+            backup_db_path: Path to the backup database file
+            restore_options: Dictionary with keys:
+                - restore_users: Restore user data
+                - restore_cats: Restore cat data (cats, reference_images, recognition_events, location_history)
+                - restore_content: Restore website content
+                - restore_settings: Restore settings
+                - restore_messages: Restore messages
+                - restore_adoption_requests: Restore adoption requests
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Open backup database
+            backup_conn = sqlite3.connect(backup_db_path)
+            backup_conn.row_factory = sqlite3.Row
+            backup_cursor = backup_conn.cursor()
+            
+            # Open current database
+            current_conn = sqlite3.connect(self.db_path)
+            current_cursor = current_conn.cursor()
+            
+            try:
+                # Restore users
+                if restore_options.get('restore_users', False):
+                    current_cursor.execute('DELETE FROM users')
+                    backup_cursor.execute('SELECT * FROM users')
+                    users = backup_cursor.fetchall()
+                    for user in users:
+                        current_cursor.execute('''
+                            INSERT INTO users (id, name, email, password_hash, is_admin, is_super_admin, is_verified, verification_token, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            user['id'], user['name'], user['email'], user['password_hash'],
+                            user.get('is_admin', 0), user.get('is_super_admin', 0),
+                            user.get('is_verified', 0), user.get('verification_token'), user.get('created_at')
+                        ))
+                
+                # Restore cats and related data
+                if restore_options.get('restore_cats', False):
+                    # Delete related data first (due to foreign keys)
+                    current_cursor.execute('DELETE FROM cat_location_history')
+                    current_cursor.execute('DELETE FROM cat_recognition_events')
+                    current_cursor.execute('DELETE FROM cat_reference_images')
+                    current_cursor.execute('DELETE FROM adoption_requests WHERE cat_id IS NOT NULL')
+                    current_cursor.execute('DELETE FROM cats')
+                    
+                    # Restore cats
+                    backup_cursor.execute('SELECT * FROM cats')
+                    cats = backup_cursor.fetchall()
+                    for cat in cats:
+                        columns = [col for col in cat.keys()]
+                        placeholders = ','.join(['?' for _ in columns])
+                        column_names = ','.join(columns)
+                        values = [cat[col] for col in columns]
+                        current_cursor.execute(f'INSERT INTO cats ({column_names}) VALUES ({placeholders})', values)
+                    
+                    # Restore cat_reference_images
+                    backup_cursor.execute('SELECT * FROM cat_reference_images')
+                    ref_images = backup_cursor.fetchall()
+                    for ref_img in ref_images:
+                        current_cursor.execute('''
+                            INSERT INTO cat_reference_images (id, cat_id, image_path, hash_hex, hash_length, embedding_vector, is_primary, order_index, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            ref_img['id'], ref_img['cat_id'], ref_img['image_path'],
+                            ref_img['hash_hex'], ref_img['hash_length'], ref_img.get('embedding_vector'),
+                            ref_img.get('is_primary', 0), ref_img.get('order_index', 0), ref_img.get('created_at')
+                        ))
+                    
+                    # Restore cat_recognition_events
+                    backup_cursor.execute('SELECT * FROM cat_recognition_events')
+                    events = backup_cursor.fetchall()
+                    for event in events:
+                        current_cursor.execute('''
+                            INSERT INTO cat_recognition_events (id, cat_id, matched, match_score, hash_distance, request_metadata, image_path, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            event['id'], event.get('cat_id'), event.get('matched'),
+                            event.get('match_score'), event.get('hash_distance'),
+                            event.get('request_metadata'), event.get('image_path'), event.get('created_at')
+                        ))
+                    
+                    # Restore cat_location_history
+                    backup_cursor.execute('SELECT * FROM cat_location_history')
+                    locations = backup_cursor.fetchall()
+                    for loc in locations:
+                        current_cursor.execute('''
+                            INSERT INTO cat_location_history (id, cat_id, user_id, latitude, longitude, visit_status, visit_notes, recognition_event_id, image_path, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            loc['id'], loc['cat_id'], loc['user_id'], loc['latitude'], loc['longitude'],
+                            loc.get('visit_status'), loc.get('visit_notes'), loc.get('recognition_event_id'),
+                            loc.get('image_path'), loc.get('created_at')
+                        ))
+                
+                # Restore content
+                if restore_options.get('restore_content', False):
+                    current_cursor.execute('DELETE FROM content')
+                    backup_cursor.execute('SELECT * FROM content')
+                    contents = backup_cursor.fetchall()
+                    for content in contents:
+                        current_cursor.execute('''
+                            INSERT INTO content (id, title, content, updated_at)
+                            VALUES (?, ?, ?, ?)
+                        ''', (content['id'], content.get('title'), content.get('content'), content.get('updated_at')))
+                
+                # Restore settings
+                if restore_options.get('restore_settings', False):
+                    current_cursor.execute('DELETE FROM settings')
+                    backup_cursor.execute('SELECT * FROM settings')
+                    settings = backup_cursor.fetchall()
+                    for setting in settings:
+                        current_cursor.execute('''
+                            INSERT INTO settings (key, value, updated_at)
+                            VALUES (?, ?, ?)
+                        ''', (setting['key'], setting.get('value'), setting.get('updated_at')))
+                
+                # Restore messages
+                if restore_options.get('restore_messages', False):
+                    current_cursor.execute('DELETE FROM messages')
+                    backup_cursor.execute('SELECT * FROM messages')
+                    messages = backup_cursor.fetchall()
+                    for msg in messages:
+                        current_cursor.execute('''
+                            INSERT INTO messages (id, sender_id, receiver_id, subject, content, is_read, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            msg['id'], msg.get('sender_id'), msg.get('receiver_id'),
+                            msg.get('subject'), msg.get('content'), msg.get('is_read', 0), msg.get('created_at')
+                        ))
+                
+                # Restore adoption_requests
+                if restore_options.get('restore_adoption_requests', False):
+                    current_cursor.execute('DELETE FROM adoption_requests')
+                    backup_cursor.execute('SELECT * FROM adoption_requests')
+                    requests = backup_cursor.fetchall()
+                    for req in requests:
+                        current_cursor.execute('''
+                            INSERT INTO adoption_requests (id, cat_id, user_id, message, contact_info, status, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            req['id'], req.get('cat_id'), req.get('user_id'),
+                            req.get('message'), req.get('contact_info'), req.get('status', 'pending'), req.get('created_at')
+                        ))
+                
+                current_conn.commit()
+                return True
+                
+            finally:
+                backup_conn.close()
+                current_conn.close()
+                
+        except Exception as e:
+            print(f"Error restoring database: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
 
 # Initialize database
@@ -2117,6 +2299,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_verify_reset_code()
         elif self.path == '/api/user/reset-password':
             self.handle_reset_password()
+        elif self.path == '/api/admin/database/restore':
+            self.handle_restore_database()
         else:
             self.send_response(404)
             self.end_headers()
@@ -2258,6 +2442,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_response(400)
                     self.end_headers()
                     self.wfile.write(json.dumps({"error": "Token required"}).encode())
+            elif self.path == '/api/admin/database/download':
+                self.handle_download_database()
             else:
                 self.send_response(404)
                 self.end_headers()
@@ -4448,6 +4634,131 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": "User not found or could not be updated"}).encode())
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+    
+    def handle_download_database(self):
+        """Download complete database backup (super admin only)"""
+        user = self.get_current_user()
+        if not user or not (user.get('is_super_admin') or user.get('is_super_admin') == 1):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Super admin access required"}).encode())
+            return
+        
+        try:
+            db_bytes = db.get_database_bytes()
+            if not db_bytes:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Failed to read database"}).encode())
+                return
+            
+            # Generate filename with timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"database_backup_{timestamp}.db"
+            
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/octet-stream')
+            self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+            self.send_header('Content-Length', str(len(db_bytes)))
+            self.end_headers()
+            self.wfile.write(db_bytes)
+            
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+    
+    def handle_restore_database(self):
+        """Restore database with selective restoration (super admin only)"""
+        user = self.get_current_user()
+        if not user or not (user.get('is_super_admin') or user.get('is_super_admin') == 1):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Super admin access required"}).encode())
+            return
+        
+        try:
+            # Parse multipart form data
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={'REQUEST_METHOD': 'POST',
+                        'CONTENT_TYPE': self.headers['Content-Type']}
+            )
+            
+            # Get database file
+            if 'database_file' not in form:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Database file is required"}).encode())
+                return
+            
+            file_item = form['database_file']
+            if not file_item.filename:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "No file uploaded"}).encode())
+                return
+            
+            # Get restore options
+            restore_options = {
+                'restore_users': form.getvalue('restore_users') == 'true',
+                'restore_cats': form.getvalue('restore_cats') == 'true',
+                'restore_content': form.getvalue('restore_content') == 'true',
+                'restore_settings': form.getvalue('restore_settings') == 'true',
+                'restore_messages': form.getvalue('restore_messages') == 'true',
+                'restore_adoption_requests': form.getvalue('restore_adoption_requests') == 'true'
+            }
+            
+            # Check if at least one option is selected
+            if not any(restore_options.values()):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Please select at least one data type to restore"}).encode())
+                return
+            
+            # Save uploaded file temporarily
+            temp_dir = 'temp'
+            os.makedirs(temp_dir, exist_ok=True)
+            temp_file_path = os.path.join(temp_dir, f"restore_{int(time.time())}.db")
+            
+            with open(temp_file_path, 'wb') as f:
+                f.write(file_item.file.read())
+            
+            # Verify it's a valid SQLite database
+            try:
+                test_conn = sqlite3.connect(temp_file_path)
+                test_conn.close()
+            except:
+                os.remove(temp_file_path)
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid database file format"}).encode())
+                return
+            
+            # Restore database
+            success = db.restore_database(temp_file_path, restore_options)
+            
+            # Clean up temp file
+            try:
+                os.remove(temp_file_path)
+            except:
+                pass
+            
+            if success:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": "Database restored successfully"}).encode())
+            else:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Failed to restore database"}).encode())
+                
         except Exception as e:
             self.send_response(500)
             self.end_headers()
